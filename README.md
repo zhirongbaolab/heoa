@@ -6,7 +6,7 @@ A single cell transcriptome atlas of human early embryogenesis
 
 LIN28A expression delineates developmental stages in vertebrate embryogenesis
 
-## 2. The introduction for file structures
+## 2. The introduction for file structure
 
   1. *.html: R markdown files for generating each figure.
   2. src/: source codes for each figure (corresponding to *.html) and all other analysis (identification of cell types and identification of systemically changing genes).
