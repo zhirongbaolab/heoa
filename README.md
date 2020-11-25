@@ -1,4 +1,6 @@
-# This repository contains the R code used in the following papers on human emrbyo:
+# organroot
+
+This repository contains the R code used in the following papers on human emrbyo:
 
 A single cell transcriptome atlas of human early embryogenesis
 
