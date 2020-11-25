@@ -9,7 +9,7 @@ LIN28A expression delineates developmental stages in vertebrate embryogenesis
 ## 2. The introduction for file structures
 
   1. *.html: R markdown files for generating each figure.
-  2. src/: source codes for each figure (corresponding to *.html) and all other analysis (cell type identification and systemically changing genes).
+  2. src/: source codes for each figure (corresponding to *.html) and all other analysis (identification of cell types and identification of systemically changing genes).
   3. data/: necessary input data for scripts: for example, gene annotation, cell annotation, color scheme, contours of limb domains.
   4. list/: gene list from published data: batch effect genes, cell cycle genes, and hemoglobin genes.
   5. plot/: figures generated in the analysis that are not included in R markdown files.
