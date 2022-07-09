@@ -1,0 +1,271 @@
+---
+title: "Fig. 3 & supple."
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Figures on limb bud
+
+### Fig. 3: Umap at each stage
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# load('r2_limb_new15.rdata') # load meta-data of cells/cell types
+do_col<-col6[c(7,15,17,4,16,8,11,6,3,5, 14,20,19,10,10,19,2)]
+names(do_col)<-sort(unique(sapply(c(colnames(insitu2), colnames(insitu3)), substring,2)))
+tmp<-sapply(flm2_anno, function(x){ strsplit(x,split=' ')[[1]][3] })
+names(tmp)<- names(flm2_fi)
+# CS13
+#pdf(paste('../result/cluster2022/limb_new15/cs13/umap/flm2_fi','.pdf',sep=''))
+par(cex=2,las=1,mar=rep(.2,4),lwd=3)
+plot_ind<-sample.int(nrow(flm2_umap))
+plot(flm2_umap[plot_ind,1],flm2_umap[plot_ind,2],pch=20,xlab='Umap-1',ylab='Umap-2',frame=F,col=do_col[tmp[flm2_fi_ind]][plot_ind],cex=.3,main='', xaxt='n',yaxt='n')
+#dev.off()
+# CS15
+tmp<-sapply(flm3_anno, function(x){ strsplit(x,split=' ')[[1]][3] })
+names(tmp)<- names(flm3_fi)
+#pdf(paste('../result/cluster2022/limb_new15/cs15/umap/flm3_fi','.pdf',sep=''))
+par(cex=2,las=1,mar=rep(.2,4),lwd=3)
+plot_ind<-sample.int(nrow(flm3_umap))
+plot(flm3_umap[plot_ind,1],flm3_umap[plot_ind,2],pch=20,xlab='Umap-1',ylab='Umap-2',frame=F,col=do_col[tmp[flm3_fi_ind]][plot_ind],cex=.3,main='', xaxt='n',yaxt='n')
+#dev.off()
+# CS12
+tmp<-sapply(flm1_anno, function(x){ strsplit(x,split=' ')[[1]][3] })
+names(tmp)<- names(flm1_fi)
+#pdf(paste('../result/cluster2022/limb_wl/cs12/umap/flm1_fi','.pdf',sep=''))
+par(cex=2,las=1,mar=rep(.2,4),lwd=3)
+plot_ind<-sample.int(nrow(flm1_umap))
+plot(flm1_umap[plot_ind,1],flm1_umap[plot_ind,2],pch=20,xlab='Umap-1',ylab='Umap-2',frame=F,col=do_col[tmp[flm1_fi_ind]][plot_ind],cex=1,main='', xaxt='n',yaxt='n')
+#dev.off()
+```
+
+### Fig. S10-11: digit in situ at each stage
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# CS15
+# a function to fill region
+scatter_fill_digit<-function (x, y, z,xlim=c(min(x),max(x)),ylim=c(min(y),max(y)),zlim=c(min(z),max(z)),
+                          nlevels = 20,title, plot.axes, 
+                          key.title, key.axes, asp = NA, xaxs = "i", 
+                          yaxs = "i", las = 1, 
+                          axes = TRUE, frame.plot = axes, is_0f=F, plot_cex1,plot_cex2,col=-1,is_axis='n',is_legend=T,xlab='',ylab='',main_cex=1,only_col=F,leg_xfac=20,...) 
+{
+# choose colors to interpolate
+#print(zlim)
+levels <- seq(zlim[1],zlim[2],length.out = nlevels)
+if(col[1]==-1) col <- c('grey',colorRampPalette(c("dark green","yellow","red"))(nlevels))
+if(only_col) return(col[cut(c(z,zlim),nlevels)])
+colz <- col[cut(c(z,zlim[2]),nlevels)]  # Something is not right here for digit in situ. When gene expression is 1.5~2, the minimal value will be colored by white!!!!!
+   # points
+   plot(x,y,type = "n",xaxt=is_axis,yaxt=is_axis,xlab=xlab,ylab=ylab,xlim=xlim,ylim=ylim,bty="n",main=title,cex.main=main_cex)
+   if(!is_0f){
+     ind<- sample.int(length(x))
+     points(x[ind],y[ind],col = colz[ind],xaxt='n',yaxt='n',xlab="",ylab="",bty="n",cex=plot_cex1,...)
+   }else{
+     points(x[z==0],y[z==0],col = colz[z==0],xaxt='n',yaxt='n',xlab="",ylab="",bty="n",cex=plot_cex1,...)
+     points(x[z!=0],y[z!=0],col = colz[z!=0],xaxt='n',yaxt='n',xlab="",ylab="",bty="n",cex=plot_cex2,...)
+   }
+  if(is_legend) legend( par('usr')[2]-(par('usr')[2]-par('usr')[1])/leg_xfac,par('usr')[4], signif(c(levels[1],zlim[2]),digit=2), col=col[c(1,length(col))] ,pch=16,xpd=NA)
+  return(colz)
+}
+
+# a function of plot digit
+plot_digit_cs15<-function(x, path='',col_grad=c(colorRampPalette(c("white","red"))(20)), cut_min=0.3,zlim_mx=2,is_cs12=F,is_cs13=F,is_cs15=F, is_title=T, exp=do_mn ){
+  val<- exp[ x, do2tj ]
+  val[val<cut_min]<-0
+  if(sum(val>cut_min)==0) plot_col<-rep('white',length(val))
+  else{
+    plot_col<- scatter_fill_digit(z=val,col=col_grad, only_col=T, zlim=c(0,zlim_mx))
+    plot_col<-plot_col[1:length(val)]
+  }
+  st<-'cs15'
+#  pdf(paste(path,st,'_',ge2an[x],'.pdf',sep=''),width=5.99,height=5.94) # 5.99*5.46/5.94=5.50596
+#  par(cex=2,las=1,mar=c(0,0,0,0),lwd=3,pch=16)
+  plot(0,0,xlab='',ylab='',main=ge2an[x],frame=F, xaxt='n',yaxt='n', xlim=c(0,986), ylim=c(0,978),col='white')
+  for(i in 1:length(fl3_dc2)){
+    polygon( x=fl3_dc2[[i]][,1], y=fl3_dc2[[i]][,2], col=NA, border='black',lwd=8)
+    polygon( x=fl3_dc2[[i]][,1], y=fl3_dc2[[i]][,2], col=plot_col[i], border=plot_col[i])
+  }
+  if(is_title) text( 220, 420, label=ge2an[x], xpd=NA,cex=1.5)
+#  dev.off()
+}
+
+do_mn<- sapply( flm3_fi, function(x){ apply( norm_mx[ c(unlist(lm_mk),hox,get_id('SOX6')), x ], 1, mean) })
+colnames(do_mn)<- paste(3, sapply( flm3_anno, function(x){ strsplit(x, split=' ')[[1]][3] }), sep='')
+fl3_dc2<-lapply( paste(3,c('a','b','c','d','e','f','h','i','j','m1','m2','n1','n2','pq','z','l','o1','o2','o3'),sep=''),function(x){
+ res<-read.table(paste('../../cross_embryo/result/reclustering/limb/limb_pat/limb_png/cs15_do15/',x,'.csv',sep=''), sep=',',as.is=T,skip=1, row.name=1)
+ res[,2]<-967-res[,2]
+ return(res)
+}) # coordinates of domain diagram
+do2tj<- paste(3,c('a','b','c','d','e','f','h','i','j','m','m','n','n','pq','z','l','o','o','o'),sep='')
+names(fl3_dc2)<- paste(3,c('a','b','c','d','e','f','h','i','j','m1','m2','n1','n2','pq','z','l','o1','o2','o3'),sep='') -> names(do2tj)
+par(cex=2,las=1,mar=c(0,0,1,0),lwd=3,pch=16, mfrow=c(3,3))
+tmp<-sapply( get_id(c('EMX2','PBX1','SHH','HAND2','MSX2','LHX9','ALX4','PAX1','TBX3','RUNX2','MEOX2','SOX9','PTCH1','SCX','PTHLH')), plot_digit_cs15, path='../result/cluster2022/limb_new15/cs15/digit/', cut_min=.2,is_title=F)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# CS13
+do_mn2<-  sapply( flm2_fi, function(x){ apply( norm_mx[ c(unlist(lm_mk),hox[1:11],get_id(c('NR2F2','SOX6'))), x ], 1, mean) })
+colnames(do_mn2)<- paste(2, sapply( flm2_anno, function(x){ strsplit(x, split=' ')[[1]][3] }), sep='')
+fl0_dc<-lapply( colnames(do_mn2),function(x){
+ res<-read.table(paste('../../cross_embryo/result/reclustering/limb/limb_pat/limb_png/cs13_do10/',x,'.csv',sep=''), sep=',',as.is=T)
+ res[,2]<-373-res[,2]
+ return(res)
+})
+plot_digit_cs13<-function(x, path='',col_grad=c(colorRampPalette(c("white","red"))(20)), cut_min=0.3,zlim_mx=2,is_cs12=F,is_cs13=F,is_cs15=F,is_cut=T, is_title=T, exp_mx=do_mn2 ){
+  val<- exp_mx[ x,  ]
+  if(is_cut) val[val<cut_min]<-0
+  if(sum(val>cut_min)==0) plot_col<-rep('white',length(val))
+  else{
+    plot_col<- scatter_fill_digit(z=val,col=col_grad, only_col=T, zlim=c(0,zlim_mx))
+    plot_col<-plot_col[1:length(val)]
+  }
+  st<-'cs13'
+#  pdf(paste(path,st,'_',ge2an[x],'.pdf',sep=''),width=4.01,height=5.19)
+#  par(cex=2,las=1,mar=c(0,0,0,0),lwd=3,pch=16)
+  plot(0,0,xlab='',ylab='',main=ge2an[x],frame=F, xaxt='n',yaxt='n', xlim=c(0,293), ylim=c(0,380),col='white')
+  for(i in 1:length(fl0_dc)){
+    polygon( x=fl0_dc[[i]][,1], y=fl0_dc[[i]][,2], col=NA, border='black',lwd=8)
+    polygon( x=fl0_dc[[i]][,1], y=fl0_dc[[i]][,2], col=plot_col[i], border=plot_col[i])
+  }
+  if(is_title) text( 146, 365, label=ge2an[x], xpd=NA,cex=1.5)
+#  dev.off()
+}
+par(cex=2,las=1,mar=c(0,0,1,0),lwd=3,pch=16, mfrow=c(3,3))
+tmp<-sapply( get_id(c('EMX2','PBX1','MSX1','SHH','HAND2','MSX2','TFAP2A','PTCH1','LMO1','NR2F2')), plot_digit_cs13, path='../result/cluster2022/limb_new15/cs13/digit/', cut_min=.2, is_title=F)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# CS12
+do_mn1<-  sapply( flm1_fi, function(x){ apply( norm_mx[ c(unlist(lm_mk),get_id('HOXA5')), x ], 1, mean) })
+colnames(do_mn1)<- paste(1, sapply( flm1_fi_anno, function(x){ strsplit(x, split=' ')[[1]][3] }), sep='')
+fl7_dc<-lapply( colnames(do_mn1),function(x){
+ res<-read.table(paste('../../VisCello-norm/inst/app/data/st1/',x,'.csv',sep=''), sep=',',as.is=T,skip=1)[,6:7]
+ res[,2]<-378-res[,2]
+ return(res)
+})
+plot_digit_cs12<-function(x, path='../result/reclustering/limb/limb_pat/digit/',col_grad=c(colorRampPalette(c("white","red"))(20)), cut_min=0.3,zlim_mx=2,is_cs12=F,is_cs13=F,is_cs15=F,is_cut=T, is_title=T ){
+  val<- do_mn1[ x, ]
+  if(is_cut) val[val<cut_min]<-0
+  if(sum(val>cut_min)==0) plot_col<-rep('white',length(val))
+  else{
+    plot_col<- scatter_fill_digit(z=val,col=col_grad, only_col=T, zlim=c(0,zlim_mx))
+    plot_col<-plot_col[1:length(val)]
+  }
+  st<-'cs12'
+#  pdf(paste(path,st,'_',ge2an[x],'.pdf',sep=''),width=4.01,height=5.19)
+#  par(cex=2,las=1,mar=c(0,0,0,0),lwd=3,pch=16)
+  plot(0,0,xlab='',ylab='',main=ge2an[x],frame=F, xaxt='n',yaxt='n', xlim=c(0,270), ylim=c(0,400),col='white')
+  for(i in 1:length(fl7_dc)){
+    polygon( x=fl7_dc[[i]][,1], y=fl7_dc[[i]][,2], col=NA, border='black',lwd=8)
+    polygon( x=fl7_dc[[i]][,1], y=fl7_dc[[i]][,2], col=plot_col[i], border=plot_col[i])
+  }
+  if(is_title) text( 135, 390, label=ge2an[x], xpd=NA,cex=1.5)
+#  dev.off()
+}
+par(cex=2,las=1,mar=c(0,0,1,0),lwd=3,pch=16, mfrow=c(3,3))
+tmp<-mapply( plot_digit_cs12, x=get_id(c('EMX2','PBX1','MSX1','SHH','HAND2','MSX2','TFAP2A','MEIS2','HOXA9','HOXA5')), cut_min=.3, MoreArgs=list( path='../result/cluster2022/limb_wl/cs12/digit/', is_title=F, is_cut=T))
+```
+
+### Fig. 3: cell number from each embryo in each domain
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+flm2_emb<- sapply( flm2_fi, function(x){  table(sapply(x,get_emb)) })
+colnames(flm2_emb)<- sapply(flm2_anno, function(x){ strsplit(x,split=' ')[[1]][3] })
+flm2_emb<- flm2_emb[,order(colnames(flm2_emb))]
+flm3_emb<- sapply( flm3_fi, function(x){  table(sapply(x,get_emb)) })
+colnames(flm3_emb)<- sapply(flm3_anno, function(x){ strsplit(x,split=' ')[[1]][3] })
+flm3_emb<- flm3_emb[c('5','9','6'),order(colnames(flm3_emb))]
+# CS13
+emb_col<- col6[ c(10,  2,  6,  8,  4,  7,  5)]
+names(emb_col)<- c('7','0','5','9','6', '21','22')
+#pdf( paste('../result/cluster2022/limb_new15/cs13/do_by_emb.pdf',sep=''),width=8,height=6 )
+par(cex=1.8,las=1,mar=c(4,4,1,2),lwd=3,pch=16)
+barplot( apply(flm2_emb,2,function(x){x*100/sum(x)}) , col=emb_col[rownames(flm2_emb)], main='', border=NA, ylab='Cells %', xlab='Domains at CS13-14')
+#legend( 8, par('usr')[4]+(par('usr')[4]-par('usr')[3])/10, legend= paste('emb 0',2:4,sep=''), col=emb_col[c('0','21','22')], bty='n',pch=15, xpd=NA)
+text( par('usr')[2]+(par('usr')[2]-par('usr')[1])/20, c(20,60,90), label=paste('emb0',2:4,sep=''), xpd=NA, col=emb_col[c('0','21','22')] )
+#dev.off()
+# CS15
+#pdf( paste('../result/cluster2022/limb_new15/cs15/do_by_emb.pdf',sep=''),width=8,height=6 )
+par(cex=2,las=1,mar=c(4,4,1,2),lwd=3,pch=16)
+bar<-barplot( apply(flm3_emb,2,function(x){ x*100/sum(x)}) , col=emb_col[rownames(flm3_emb)], main='', border=NA, ylab='Cells %', names.arg=rep('',ncol(flm3_emb)), xlab='Domains at CS15-16')
+#legend( 8, par('usr')[4]+(par('usr')[4]-par('usr')[3])/10, legend= paste('emb 0',5:7,sep=''), col=emb_col[c('5','9','6')], bty='n',pch=15, xpd=NA)
+text( bar, par('usr')[3]-(par('usr')[4]-par('usr')[3])/10, label=colnames(flm3_emb), cex=.8, xpd=NA)
+text( par('usr')[2]+(par('usr')[2]-par('usr')[1])/20, c(20,50,90), label=paste('emb0',5:7,sep=''), xpd=NA, col=emb_col[c('5','9','6')] )
+#dev.off()
+```
+
+### Fig. 3: signatures of chondcyte related domains
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+source('../../cross_embryo/code/bubble_plot.r')
+cho_mk<- get_id(c('SOX9','RUNX2','PAX1','SOX5','SOX6','PTHLH', 'CYP1B1', 'GREM1', 'OSR2', 'PHLDA1', 'MEOX2', 'HOXA11','HOXA13'))
+mk_mn1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cho_mk, x ], 1, mean) })
+mk_fr1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cho_mk, x ], 1, function(y){sum(y>0)/length(y)}) }) 
+colnames(mk_mn1)<- sapply(flm3_anno,function(x){ strsplit(x,split=' ')[[1]][3] }) -> colnames(mk_fr1)
+cs15_doo<- c('m', "a","b","c","d","e","f","h","i","j","l","n","o","pq", "z" )
+mk_mn1<- mk_mn1[,cs15_doo]
+mk_fr1<- mk_fr1[,cs15_doo]
+my_bubble( exp_mx=mk_mn1, fr_mx=mk_fr1, file_name='../result/cluster2022/limb_new15/cs15/cho_mk_bubble.pdf', ht=4, wd=4.5, col_lab_srt=0, is_legend=T, mar=c(5,4,1,1),lab_down=4, cnm_off=.7,is_pdf=F)
+```
+
+# Fig. S9: plot marker genes in 3 levels: human, mouse, in situ
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# load('../../mm2hs/peng_limb/mm_limb_mn_fr.rdata') # human/mm2hs/code/peng.r, mouse limb data
+source('../../cross_embryo/code/bubble_plot.r')
+# CS13
+library(openxlsx)
+insitu2<- read.xlsx( '../result/cluster2022/limb_new15/cs15/insitu_ref.xlsx',sheet=2, rowNames=T, colNames=T ) # in situ
+cs13_doo<- colnames(insitu2)
+cs13_mk<-get_id(rownames(insitu2))
+colnames(insitu2)<- paste('2',colnames(insitu2), sep='')
+rownames(insitu2)<- get_id(rownames(insitu2))
+mk_mn2<- mk_mn2[,cs13_doo]
+mk_fr2<- mk_fr2[,cs13_doo]
+sum( toupper(rownames(e10_mn))!= ge2an[rownames(mk_mn2)] ) # [1] 0, check order of genes
+# define diff between human and mouse as below at CS15
+diff2<- (mk_mn2>=.5 & insitu2 ==0 & e10_mn[,colnames(mk_mn2)] < 0.2 ) | (mk_mn2<.2 & insitu2 ==2 & e10_mn[,colnames(mk_mn2)] >=.5)
+sum(diff2)
+diff2[,c('p','q')]<-F
+for(i in 1:nrow(diff2)) print( paste( ge2an[rownames(diff2)[i]], paste( colnames(diff2)[diff2[i,]], collapse=' '), sep=': '))
+my_bubble_lv3( exp_mx1=mk_mn2, fr_mx1=mk_fr2, exp_mx2=e10_mn[,colnames(mk_mn2)], fr_mx2=e10_fr[,colnames(mk_mn2)], exp_mx3=data.matrix(insitu2)/3,fr_mx3=data.matrix(insitu2)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs13_mk_insitu_mm_bubble.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(10,4,1,6),lab_down=4, boxb=diff2, ofs=.5, ofs2=.5, col3=col6[8], is_pdf=F)
+
+# CS15
+cs15_mk<-get_id(c('EMX2','PBX1','MSX2','SHH','HAND2','LHX9','ALX4','PAX1','TBX3','RUNX2','MEOX2','PTCH1','SOX9','SCX','PTHLH','HOXA11','HOXA13'))
+insitu3<- read.xlsx( '../result/cluster2022/limb_new15/cs15/insitu_ref.xlsx',sheet=1, rowNames=T, colNames=T ) # in situ
+colnames(insitu3)<- paste('3',colnames(insitu3), sep='')
+rownames(insitu3)<- get_id(rownames(insitu3))
+mk_mn1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cs15_mk, x ], 1, mean) })
+mk_fr1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cs15_mk, x ], 1, function(y){sum(y>0)/length(y)}) })
+colnames(mk_mn1)<- sapply(flm3_anno,function(x){ strsplit(x,split=' ')[[1]][3] }) -> colnames(mk_fr1)
+cs15_doo<- c("a","b","c","d","e","f","h","i","j","l","n",'m',"o","pq", "z" )
+mk_mn1<- mk_mn1[,cs15_doo]
+mk_fr1<- mk_fr1[,cs15_doo]
+sum( toupper(rownames(e12_mn))!= ge2an[rownames(mk_mn1)] ) # [1] 0, check order of genes
+e12_mn_adj<- sapply( colnames(mk_mn1), function(x){
+  if(x %in% colnames(e12_mn)) return( e12_mn[,x] )
+  else if( x=='m') return( rep(0, 17) )
+  else if( x=='i'| x=='j') return( e12_mn[,'ij']) else print('error')
+})
+e12_fr_adj<- sapply( colnames(mk_fr1), function(x){
+  if(x %in% colnames(e12_fr)) return( e12_fr[,x] )
+  else if( x=='m') return( rep(0, 17) )
+  else if( x=='i'| x=='j') return( e12_fr[,'ij']) else print('error')
+})
+insitu3[get_id('HOXA11'),'3m']<-0 # should not marker any gene in domain 'm' as mouse in situ
+# define diff between human and mouse 1) hs > 0.5 & insitu =0 & mm <0.2 ; 2) sc < 0.2 & insitu =2 & mm > 0.5
+diff3<- (mk_mn1>=.5 & insitu3 ==0 & e12_mn_adj < 0.2 ) | (mk_mn1<.2 & insitu3 ==2 & e12_mn_adj >=.5)
+diff3[,'m']<-F # should exclude PTHLH and m
+sum(diff3) # 3
+for(i in 1:nrow(diff3)) print( paste( ge2an[rownames(diff3)[i]], paste( colnames(diff3)[diff3[i,]], collapse=' '), sep=': '))
+my_bubble_lv3( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=e12_mn_adj, fr_mx2=e12_fr_adj, exp_mx3=data.matrix(insitu3)/3,fr_mx3=data.matrix(insitu3)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs15_mk_insitu_mm_bubble.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=diff3, ofs=.5, ofs2=.5, col3=col6[8], cnm_off=.8, is_pdf=F)
+
+# CS12
+insitu1<- read.xlsx( '../result/cluster2022/limb_new15/cs15/insitu_ref.xlsx',sheet=3, rowNames=T, colNames=T ) # in situ
+cs12_doo<- colnames(insitu1)
+cs12_mk<-get_id(rownames(insitu1))
+colnames(insitu1)<- paste('1',colnames(insitu1), sep='')
+rownames(insitu1)<- get_id(rownames(insitu1))
+mk_mn1<-sapply( flm1_fi, function(x){ apply( norm_mx[ cs12_mk, x ], 1, mean) })
+mk_fr1<-sapply( flm1_fi, function(x){ apply( norm_mx[ cs12_mk, x ], 1, function(y){sum(y>0)/length(y)}) }) 
+colnames(mk_mn1)<- sapply(flm1_fi_anno,function(x){ strsplit(x,split=' ')[[1]][3] }) -> colnames(mk_fr1)
+mk_mn1<- mk_mn1[,cs12_doo]
+mk_fr1<- mk_fr1[,cs12_doo]
+my_bubble_lv2( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=data.matrix(insitu1)/3,fr_mx2=data.matrix(insitu1)/3, file_name='../result/cluster2022/limb_wl/cs12/cs12_mk_insitu_bubble.pdf', ht=3.5, wd=5, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=NULL, ofs=.5, ofs2=.5, col2=col6[8],is_pdf=F )
+```

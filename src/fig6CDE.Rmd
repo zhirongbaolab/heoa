@@ -1,0 +1,360 @@
+---
+title: "Fig. 6C-E"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+
+# Integration of cell types in eye from our dataset, Tang's data, and Shendure's data
+
+### Part 1: data clear up
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Tang's data
+tang_cell<-read.table('../data/s5.txt',sep='\t',as.is=T,header=T) # [1] 2421    9
+dim(tang_mx<- read.table('../data/GSE107618_Merge.TPM.csv',sep=',',as.is=T,header=T))
+sum(! colnames(tang_mx) %in% tang_cell[,1]) # [1] 413, some cells do not have annotation
+sum( tang_cell[,8] %in% colnames(tang_mx) ) # [1] 2421, all cells with ID have UMI data
+rownames(tang_cell)<- tang_cell[,8]
+tang_deg<- read.table('../data/s4_deg.txt',sep='\t',as.is=T,header=T)
+
+# Shendure's data (eye cell types in the format of meta-cells)
+load('../shendure/sh_meta_eye.rdata')
+dim(sh_meta_eye) # [1] 32143  5378
+
+# our data
+ficlu<-read.table('~/BaoLab/xuy/human/cross_embryo/result/reclustering3/TJ_clu/cell_annotate.csv',sep=',',as.is=T,header=T)
+load(file='../../../cross_embryo/result/all_emb/all_emb_v5_raw_for_hs2hs.rdata')
+our_eye<- all_v5_raw[, rownames(ficlu)[ficlu[,4]%in%c("retinal pigment epithelium","retinal progenitor cell","optic vesicle")] ] 
+dim(our_eye) # [1] 33694   408
+rm(all_v5_raw)
+
+# compile a total annotation
+shen_anno<- t(sapply( colnames(sh_meta_eye), function(x){
+  xx<-strsplit(x,split='-')[[1]]
+  res<- c( 'Shen', xx[2], xx[3], xx[2])
+  return(res)
+}))
+colnames(shen_anno)<- c('data','type','stage','type2')
+tang_anno<- cbind('Tang', tang_cell[,c('type','stage','type')])
+colnames(tang_anno)<- c('data','type','stage','type2')
+tang_anno[,4]<-sapply(tang_cell[,'type'], function(x){ strsplit(x,split='_')[[1]][1] })
+our_anno<- cbind('our', ficlu[colnames(our_eye), c(4,5,4)])
+colnames(our_anno)<- c('data','type','stage','type2')
+# unified type names
+uni_type<- c('RPC','RPE','RPE',"Photoreceptor cells",'Horizontal cells','Amacrine cells','Bipolar cells','Muller glia','RGC','Muller glia')
+names(uni_type)<- c("retinal progenitor cell","Retinal pigment cells","retinal pigment epithelium",'Photoreceptor','Horizontal','Amacrine','Bipolar','Mu','Ganglion cells','Retinal progenitors and Muller glia')
+shen_anno[ shen_anno[,2]%in%names(uni_type),4]<-  uni_type[shen_anno[shen_anno[,2]%in%names(uni_type),2]]
+tang_anno[ tang_anno[,4]%in%names(uni_type),4]<-  uni_type[tang_anno[tang_anno[,4]%in%names(uni_type),4]]
+our_anno[ our_anno[,4]%in%names(uni_type),4]<-  uni_type[our_anno[our_anno[,4]%in%names(uni_type),4]]
+tang_anno[,3]<- sapply( tang_anno[,3], function(x){ as.numeric(substring(x,0,nchar(x)-1))*7 })
+# merge all annotation
+for(i in 1:4) tang_anno[,i]<- as.character(tang_anno[,i]) # remove 'factor'
+all_anno<- rbind( our_anno, shen_anno, tang_anno)
+
+# unify genes
+tang_id<- sapply( tang_mx[,1], function(x){ if( !x %in% ge2an) return('') else return( names(ge2an)[ge2an%in%x][1] ) })
+length(comg <- intersect( rownames(sh_meta_eye), tang_id )) # 32122
+tmp<- data.matrix(tang_mx[ tang_id !='', -1])
+rownames(tmp)<- tang_id[tang_id!='']
+dim(tang_com <- tmp[comg, ])
+tang_com<- tang_com/100 # to 10000 UMI
+tang_com[is.na(tang_com)]<- 0
+dim(sh_com<-sh_meta_eye[comg,])
+dim(our_com<- our_eye[comg,])
+
+# remove unrelated cell types and unannotated cell types
+rm_tp<-c('Astrocytes','Blood','Corneal and conjunctival epithelial cells','Fibroblast','Lens fibre cells','Microglia','PDE11A_FAM19A2 positive cells','Skeletal muscle cells','Smooth muscle cells','Stromal cells','Vascular endothelial cells')
+tang_com<- tang_com[, !all_anno[colnames(tang_com),4] %in% rm_tp] # [1] 32122  2354
+dim(tang_com<- tang_com[, colnames(tang_com) %in% rownames(all_anno)]) # [1] 32122  2223
+sh_com<- sh_com[, !all_anno[colnames(sh_com),4] %in% rm_tp] # [1] 32122  4827
+# remove late stage in Tang's data
+dim(tang_com<- tang_com[ , colnames(tang_com)[!all_anno[colnames(tang_com),'stage'] %in% c('161','168')] ])
+```
+
+### Part 2: integration three datasets
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+library(Seurat)
+seu<- lapply( list( our_com, sh_com, tang_com), function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- mapply(function(x, y) {
+    if(y) x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+}, x=seu, y=c(T,T,F) ) # Tang is normalized
+length(features <- SelectIntegrationFeatures(object.list = seu,nfeatures=2000))
+batch<-'ds3_hvg2k'
+vis_rmg<- scan( '../../../cross_embryo/code/vis_rmg.txt',what=character(0)) # cell cycle genes and batch effect genes to be removed in HVGs
+tf<- scan('../../../Imai_table/humanTF_GO0003700_clear.txt', what=character(0))
+length( features<- setdiff( features, vis_rmg) )
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+anchor <- FindIntegrationAnchors(object.list = seu, anchor.features = features, reduction = "rpca", dims=1:50 )
+seu_comb <- IntegrateData(anchorset = anchor)
+DefaultAssay(seu_comb) <- "integrated"
+# Run the standard workflow for visualization and clustering
+seu_comb <- ScaleData(seu_comb, verbose = FALSE)
+seu_comb <- RunPCA(seu_comb, npcs = 50, verbose = FALSE, features=features )
+seu_comb <- RunUMAP(seu_comb, reduction = "pca", dims = 1:30)
+umap<-seu_comb@reductions$umap@cell.embeddings
+pcac<- seu_comb@reductions$pca@cell.embeddings
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# color features on Umap
+load('../../../cross_embryo/code/col4hs2hs.rdata')# colors
+ds_col<- col6[c(2,3,6)]
+names(ds_col)<-as.character(unique(all_anno[,1]))
+st_col<- c( col6[c(3:11)], colorRampPalette(c( col6[18], col6[2]) )(7), col6[c(12,19)] )
+names(st_col)<- c( 'CS12','CS13','CS15', sort(as.numeric(as.character(unique(all_anno[,3])[-(1:3)]))) )
+tp_col<- col6[2:10] 
+names(tp_col)<-unique(all_anno[rownames(umap),4])
+tp_cen<-t( sapply( unique(all_anno[rownames(umap),4]), function(x){
+  c( mean(umap[ all_anno[rownames(umap),4]==x,1]), mean(umap[ all_anno[rownames(umap),4]==x,2]) )
+}) )
+
+# plot
+rand_ind<- sample.int( nrow(umap) )
+#pdf(paste('../ds3/',batch,'_dataset.pdf',sep=''),width=12,height=12) # by dataset
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=ds_col[as.character(all_anno[rownames(umap),1]) ][rand_ind],cex=0.3)
+legend( 'bottomleft', col=ds_col[c(1,3,2)], legend=c('this','Tang','Shendure'), xpd=NA, bty='n', pch=16)
+#dev.off()
+# cell type
+#pdf(paste('../ds3/',batch,'_type.pdf',sep=''),width=12,height=12) # by type
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=tp_col[as.character(all_anno[rownames(umap),4]) ][rand_ind],cex=0.3)
+for(i in 1:length(tp_col)) text( tp_cen[i,1], tp_cen[i,2], label=i, xpd=NA,cex=1)
+#legend( 'bottomleft', col=tp_col, legend=paste(1:length(tp_col),names(tp_col)), xpd=NA, bty='n', pch=16, cex=1)
+#dev.off()
+# stage
+st_col2<- c( col6[c(3,4,6, 6)], col6[2], rep(col6[11],2), rep(col6[5],3), rep(col6[17],3), rep(col6[7],3))
+names(st_col2)<- names(st_col)[c(1:16)]
+#pdf(paste('../ds3/',batch,'_stage2.pdf',sep=''),width=12,height=12) # by stage
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=st_col2[as.character(all_anno[rownames(umap),3]) ][rand_ind],cex=0.3)
+#legend( 'bottomleft', col=st_col2[c(1,2,3,5,6,8,12,16)], legend=c(names(st_col2)[1:2],'CS15~16','6w','7~8w','9~13w','94~115d','117~129d'), xpd=NA, bty='n', pch=16)
+#dev.off()
+
+# clear workspace
+all_umap<- umap
+all_pcac<- pcac
+#rm(umap,pcac,seu)
+```
+
+### Part 3: calculate distances between cell types by Slingshot
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# calculate on lilac
+library(slingshot)
+tp<- paste(all_anno[ rownames(umap), 1], all_anno[ rownames(umap), 4],sep='-')
+# calculate distance in PCA space
+batch<-'eye_ds3'
+slin<- getLineages( pcac, tp)
+write.table( slin@slingParams$dist ,file=paste(batch, '_sling_dist.txt',sep=''),quote=F,sep='\t')
+slind<- slin@slingParams$dist # distance between cell types
+```
+
+### Part 4: construct trajectory with directed minimum span tree considering temporal information
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# consider temporal information of cell types
+tp_temp<- sapply( list( our_com, sh_com, tang_com), function(x){
+  st<- as.character(all_anno[colnames(x), 'stage'])
+  tp<- paste(all_anno[ colnames(x), 1], all_anno[ colnames(x), 4],sep='-')
+  st[st=='CS12']<-26
+  st[st=='CS13']<-28
+  st[st=='CS15']<-35
+  ave<- tapply( as.numeric(st), tp, mean)
+  return(ave)
+})
+head(tp_temp<- round(do.call( 'c', tp_temp)[ rownames(slind) ], digit=1))
+#write.table( cbind( names(tp_temp), tp_temp), file='../ds3/sling/tp_temp.txt',col.name=F,row.name=F,quote=F, sep='\t')
+# set group based on average timing and read back
+library(openxlsx)
+tp_group<- as.numeric(read.xlsx('../ds3/sling/eye_ds3_umap_sling_dist.xlsx',sheet=1)[,21]) # temporal group, from early to late
+names(tp_group)<- names(tp_temp)
+tp_ind<- 1:length(tp_group)
+names(tp_ind)<-names(tp_group)
+tp_group
+# construct Chu-Liu/Edmonds tree
+library(igraph)
+library(optrees)
+ed_arc<- lapply( names(tp_group)[tp_group<max(tp_group)], function(x,dist=slind ){ # only allow link from early to late cell type
+  level<- tp_group[x]
+  res<- t( sapply( names(tp_group)[tp_group==(1+level)], function(y){ c( tp_ind[x], tp_ind[y], dist[ x,y] ) }) )
+  return(res)
+})
+ed_arc<- do.call( rbind, ed_arc)
+colnames(ed_arc)<- 1:3
+ed_tr<- msArborEdmonds( nodes=tp_ind, arcs=ed_arc)
+# to adjacency matrix
+to_adja<- function(x, ind){
+  res<- matrix(0, nrow=length(ind), ncol=length(ind))
+  for(i in 1:nrow(x)) res[x[i,1],x[i,2]]<-1
+  colnames(res)<- names(ind) -> rownames(res)
+  return(res)
+}
+ed_adja<- to_adja(ed_tr$tree.arcs,ind=tp_ind)
+sling<- graph_from_adjacency_matrix( ed_adja, mode='undirected')
+V(sling)$color<- tp_col[ sapply(rownames(slind), function(x){ strsplit(x, split='-')[[1]][2] }) ]
+V(sling)$label.cex<-2
+V(sling)$label.color<- 'black'
+E(sling)$width<-4
+E(sling)$color<-'black'
+V(sling)$label<-c('OV','RPE','RPC', rep('', nrow(ed_adja)-3) )
+#pdf( paste('../ds3/sling/sling_edtree.pdf',sep=''))
+par(mar=rep(.1, 4))
+plot(sling, vertex.size=8, vertex.label.dist=2.5 , layout = layout.reingold.tilford(sling, root=1 ), vertex.shape=c('circle','rectangle','square')[ as.factor(sapply(rownames(slind), function(x){ strsplit(x, split='-')[[1]][1] }))], vertex.label.degree=c(-pi,0,rep(-pi,16)) )
+#dev.off()
+```
+
+### Part 5: pseudotime analysis by slingshot
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# run on LILAC
+my_lin<- list( c("our-optic vesicle","our-RPE","Tang-RPE","Shen-RPE"), c("our-optic vesicle","our-RPC","Tang-RPC","Tang-RGC","Shen-RGC"))
+names(my_lin)<- paste('Lineage',1:length(my_lin),sep='')
+batch<- paste('eye_b2_ps_pca',sep='')
+slin<- getLineages( pcac, tp, start.clus='our-optic vesicle', end.clus=c('Shen-Amacrine cells','Shen-Bipolar cells','Shen-Horizontal cells','Shen-Muller glia','Shen-Photoreceptor cells','Shen-RGC','Shen-RPE') )
+slin@adjacency<- ref_adja
+slin@lineages<- my_lin
+slin<- getCurves(slin) # takes ~1 min
+slin_ps<-list(slingPseudotime(slin), slin@curves)
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+length(slin_ps) # [1] 2
+b2_ps<- slin_ps[[1]] # RPE branch as column 1, RGC branch as column 2
+#pdf(paste('../ds3/pseudo/rpe_','.pdf',sep=''),height=5)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+ind<- sample(rownames(b2_ps)[!is.na(b2_ps[,1])])
+jet<- runif(length(ind),-.1,.1)
+plot(  b2_ps[ind,1], rep(1,length(ind))+jet, col=tp_col[as.character(all_anno[ind,4]) ], cex=.5, frame=F, xaxt='n',yaxt='n',xlab='Pseudotime',ylab='',main='RPE branch', ylim=c(0,2.5),xpd=NA)
+points( b2_ps[ind,1], rep(2,length(ind))+jet, col=ds_col[as.character(all_anno[ind,1]) ], cex=.5 ,xpd=NA)
+points( b2_ps[ind,1], rep(0,length(ind))+jet, col=st_col2[as.character(all_anno[ind,3]) ], cex=.5 ,xpd=NA)
+plot_ind<- b2_ps[ind,1]<15 & ! st_col2[as.character(all_anno[ind,3]) ] %in% st_col2[c('129','77')]
+points( b2_ps[ind,1][plot_ind], (rep(0,length(ind))+jet)[plot_ind], col=st_col2[as.character(all_anno[ind,3]) ][plot_ind], cex=.5 ,xpd=NA)
+arrows( -0.5,-0.5, max(b2_ps[ind,1]),-0.5, length=.1,xpd=NA)
+text( rep( par('usr')[1]-(par('usr')[2]-par('usr')[1])/7,3), 0:2, label=c('stage','cell type','dataset'), xpd=NA)
+#dev.off()
+#pdf(paste('../ds3/pseudo/rpc_','.pdf',sep=''),height=5)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+ind<- sample(rownames(b2_ps)[!is.na(b2_ps[,2])])
+jet<- runif(length(ind),-.1,.1)
+plot(  b2_ps[ind,2], rep(1,length(ind))+jet, col=tp_col[as.character(all_anno[ind,4]) ], cex=.5, frame=F, xaxt='n',yaxt='n',xlab='Pseudotime',ylab='',main='RGC branch', ylim=c(0,2.5),xpd=NA)
+points( b2_ps[ind,2], rep(2,length(ind))+jet, col=ds_col[as.character(all_anno[ind,1]) ], cex=.5 ,xpd=NA)
+points( b2_ps[ind,2], rep(0,length(ind))+jet, col=st_col2[as.character(all_anno[ind,3]) ], cex=.5 ,xpd=NA)
+arrows( -0.5,-0.5, max(b2_ps[ind,2]),-0.5, length=.1,xpd=NA)
+text( rep(par('usr')[1]-(par('usr')[2]-par('usr')[1])/7,3), 0:2, label=c('stage','cell type','dataset'), xpd=NA)
+#dev.off()
+```
+
+### Part 6: key genes on heatmap along pseudotime
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+ref_ps<- b2_ps
+# normalize data into per 10000 UMIs
+d3_nm<-lapply( list( our_com, tang_com, sh_com), function(x){
+  total<- apply(x,2,sum)
+  res<-t( t(x)*10000/total )
+  return(res)
+})
+dim(d3_nmg<- do.call(cbind, d3_nm)) # [1] 32122  7040
+rm(d3_nm)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+sapply(ps_cell<- list( rownames(ref_ps)[ all_anno[rownames(ref_ps),4] %in% c('optic vesicle','RPE') ],
+rownames(ref_ps)[ all_anno[rownames(ref_ps),4] %in% c('optic vesicle','RPC','RGC')] ), length) # [1] 1036 2190
+apply( !is.na(ref_ps[,]), 2, sum) # check!
+sapply( ps_cell, function(x){ apply( is.na(ref_ps[x,]),2,sum) }) # check!
+# plot heatmap
+source('~/baolab/xuy/human/scatter_fill2.r')
+get_id<-function(x){ sapply(x, function(y){names(ge2an)[ge2an==y][1]})}
+for( i in 1:4){
+g<- c('MITF','PMEL','DCX','RAX')[i]
+allc<- unique(unlist(ps_cell))
+plot_data<- d3_nmg[get_id(g),allc]
+maxz<- c(20,150,15,10)
+plot_data[plot_data>maxz[i]]<-maxz[i]
+all_col<- scatter_fill2( z=plot_data, only_col=T )[1:length(allc)]
+names(all_col)<- allc
+inc<- ps_cell[[1]]
+plot_col<- all_col[inc]
+#pdf(paste('../ds3/pseudo/gene/rpe_',g,'.pdf',sep=''),height=1.5)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3,pch=16)
+ind<- sample(length(inc))
+ind1<- ind[ plot_col[ind]=='grey' ]
+ind2<- ind[ plot_col[ind]!='grey'  ]
+jet<- runif(length(ind1),-.1,.1)
+plot(  ref_ps[inc,1], rep(0,length(ind)), col='white', cex=.5, frame=F, xaxt='n',yaxt='n',xlab='',ylab='',main=paste(g,'RPE'), ylim=c(0,.3),xpd=NA)
+points( ref_ps[inc[ind1],1], rep(0,length(ind1))+jet, col=plot_col[ind1], cex=.5, xpd=NA)
+jet<- runif(length(ind2),-.1,.1)
+points( ref_ps[inc[ind2],1], rep(0,length(ind2))+jet, col=plot_col[ind2], cex=.5, xpd=NA)
+legend( max(ref_ps[inc,1])-10, .45, col=c('grey','red'), legend=c(0,maxz[i] ), pch=16, xpd=NA, cex=.5) # round(max(d3_nmg[get_id(g),allc]),digit=1)
+#dev.off()
+inc<- ps_cell[[2]]
+plot_col<- all_col[inc]
+#pdf(paste('../ds3/pseudo/gene/rgc_',g,'.pdf',sep=''),height=1.5)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3,pch=16)
+ind<- sample(length(inc))
+ind1<- ind[ plot_col[ind]=='grey' ]
+ind2<- ind[ plot_col[ind]!='grey'  ]
+jet<- runif(length(ind1),-.1,.1)
+plot(  ref_ps[inc,2], rep(0,length(ind)), col='white', cex=.5, frame=F, xaxt='n',yaxt='n',xlab='',ylab='',main=paste(g,'RGC'), ylim=c(0,.3),xpd=NA)
+points(ref_ps[inc[ind1],2], rep(0,length(ind1))+jet, col=plot_col[ind1], cex=.5,xpd=NA)
+jet<- runif(length(ind2),-.1,.1)
+points(ref_ps[inc[ind2],2], rep(0,length(ind2))+jet, col=plot_col[ind2], cex=.5,xpd=NA)
+#dev.off()
+}
+```
+
+### Part 7: identify key genes for each cell type on trajectory
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# self > mother: 2-fold;
+# exp in self: fraction > x % & exp > y; 
+# not ( any sister > mother )
+d3_tp<- paste( all_anno[colnames(d3_nmg),1], all_anno[colnames(d3_nmg),4], sep='-')
+tp_mo<- c( rep('our-optic vesicle',2), 'Tang-Amacrine cells', 'Tang-Bipolar cells', 'Tang-Horizontal cells', 'Tang-Muller glia', 'Tang-Photoreceptor cells', 'Tang-RGC', 'Tang-RPE', rep('Tang-RPC', 6), 'our-RPC', 'our-RPE')
+names(tp_mo)<- names( table(d3_tp) )[-1]
+uni_tp<- names( table(d3_tp) ) # 18
+# expression mean and fraction for each type
+d3_tp_mn <- by( t(d3_nmg), d3_tp, function(x){ apply(t(x), 1, mean) })
+dim(d3_tp_mn<- do.call( cbind, d3_tp_mn)) 
+d3_tp_fr <- by( t(d3_nmg), d3_tp, function(x){ apply( t(x)>0, 1, sum)/nrow(x) })
+dim(d3_tp_fr<- do.call( cbind, d3_tp_fr)) # [1] 32122    18
+# expressed genes in each type
+tp_exp <-mapply( function(mn, fr, tp, cut_mn=.5, cut_fr=.4){
+  if( tp=='Tang-Bipolar cells' ) cut_fr=1
+  return( rownames(d3_tp_mn)[ mn>=cut_mn & fr>= cut_fr] )
+}, mn= split( t(d3_tp_mn), 1:ncol(d3_tp_mn)), fr=split( t(d3_tp_fr), 1:ncol(d3_tp_fr)), tp=colnames(d3_tp_mn) )
+names(tp_exp)<-colnames(d3_tp_mn)
+sapply(tp_exp,length)
+# changed genes in each nodes compared to mother
+tp_upg<- sapply( names(tp_mo), function(x, fd=2){
+  mn<- d3_tp_mn[,x]
+  mo<- d3_tp_mn[,tp_mo[x]]
+  res<- intersect( tp_exp[[x]], rownames(d3_tp_mn)[mn/mo>fd] )
+  return(res)
+})
+# exclude genes that also upregulated in any of its sister
+sis_gp<- list( uni_tp[2:3], uni_tp[17:18], uni_tp[11:16], uni_tp[4:10] )
+tp_upg_uni<- sapply( names(tp_upg), function(x){
+  gp<- sis_gp[sapply(sis_gp, function(y){ sum(x %in% y)>0 })]
+  sis<- setdiff( gp[[1]], x)
+  res<- setdiff( tp_upg[[x]], unique(unlist(tp_upg[sis])) )
+  return(res)
+})
+upg_info<- cbind( tp_mo[names(tp_upg)], sapply(tp_exp[names(tp_upg)],length),
+sapply( tp_upg, length), sapply( tp_upg_uni, length), sapply( tp_upg_uni, function(x){sum(x %in% tf)}),
+sapply(names(tp_upg), function(x){ (1:4)[sapply(sis_gp, function(y){sum(y %in% x)>0})] } ) )
+upg_info<- upg_info[ order(upg_info[,6], rownames(upg_info) ), ]
+colnames(upg_info)<- c('mother','No. of expressed genes (mean>=0.5&fraction>=0.4)', 'No. of upregulated genes (>=2 fold, compared to mother)', 'No. of upregulated genes (specific to sister group)', 'No. of specific upregulated TFs','defined sister groups')
+head(upg_info)
+#write.table( upg_info, 'd3_upg_info.txt',sep='\t',quote=F)
+# compile a table for supplementary
+dim(upg_res<- matrix(0, ncol=length(tp_upg_uni), nrow=length(unique(unlist(tp_upg_uni))) ))
+rownames(upg_res)<- sort(unique(unlist(tp_upg_uni)))
+colnames(upg_res)<- rownames(upg_info)
+for(i in 1:length(tp_upg_uni)) upg_res[ tp_upg_uni[[i]], names(tp_upg_uni)[i] ]<-1
+upg_res<-cbind( ge2an[rownames(upg_res)], upg_res)
+head(upg_res)
+#write.table( upg_res, file='d3_eye_upregulate.txt', sep='\t', quote=F)
+
+```

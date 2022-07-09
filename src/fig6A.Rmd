@@ -1,0 +1,232 @@
+---
+title: "Fig. 6A"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+
+# Fig. 6A: visualization of integeration with human fetal data
+
+### Part 1: integrate three sets of data.
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# on LILAC
+#bsub -n 1 -W 4:00 -R rusage[mem=400] -Is /bin/bash
+#module load R/R-4.0.4
+#which R
+#PATH=/opt/common/CentOS_7/hdf5/hdf5-1.10.6-linux-centos7-x86_64-shared/bin:$PATH
+#LD_LIBRARY_PATH=/opt/common/CentOS_7/hdf5/hdf5-1.10.6-linux-centos7-x86_64-shared/lib:$LD_LIBRARY_PATH
+```
+
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# load Shendure data (sample 5000 cells for each cell type)
+# https://descartes.brotmanbaty.org/bbi/human-gene-expression-during-development/
+sh_cell<-readRDS('../shendure/df_cell.RDS')
+sh_cell[ is.na(sh_cell[,'Development_day']), 'Development_day']<- 1
+sh_cell[ is.na(sh_cell[,'Main_cluster_name']), 'Main_cluster_name']<- 'Blank'
+sh_cell[ is.na(sh_cell[,'Organ_cell_lineage']), 'Organ_cell_lineage']<- 'Blank'
+sh_cell[ is.na(sh_cell[,'Organ']), 'Organ']<- 'Blank'
+rownames(sh_cell)<- sh_cell[,1]
+sh_gene<-readRDS('../shendure/df_gene.RDS')
+sh_gene<- cbind( sh_gene, sapply( sh_gene[,1], function(x){ strsplit(as.character(x),split='.',fixed=T)[[1]][1] }) )
+dim(sh_mx<-readRDS('../shendure/gene_count_sampled.RDS')) # [1]  63561 377456
+sh_mtp<- setdiff(sort(unique(sh_cell[,'Main_cluster_name'])),'Blank')
+
+# our data and make gene consistent
+load('../../hs2hs/code/all_emb_v5_raw_for_hs2hs.rdata') # our raw matrix and meta-data
+length(ourc<- c( intersect( rownames(our_umap), ficlu[,1]), othc))  # pick cells in Fig. 1
+dim(our_mx<- all_v5_raw[,ourc]) # [1] 33694 88997
+length(comg<- intersect( sh_gene[,4], rownames(our_mx))) # 32143 # common genes in two datasets
+rownames(sh_mx)<- sh_gene[ rownames(sh_mx),4]
+rownames(sh_gene)<- sh_gene[,4]
+sh_mx2<- sh_mx[comg,] # new matrix of Shendure's dataset with only common genes
+dim(our_mx<- our_mx[ comg, ]) # new matrix of our dataset with only common genes
+our_mxs<- by( t(our_mx), as.character(ficlu[colnames(our_mx),'stage']), function(x){t(x)})
+sapply(our_mxs, dim)
+
+# annotation
+load('our_shendure_all_anno.rdata') # meta-data of Shendure's dataset and our dataset
+shen_type_sys<- read.table('shendure_unique_main_type_name.txt',as.is=T,sep='\t',row.name=1)
+
+# Because the depth of Shendure's dataset is much lower than our's, Merge shendure's cells to meta-cell per type-organ-stage (5 into 1)
+byt_byo<- tapply( colnames(sh_mx), paste(all_anno[colnames(sh_mx), 'Organ_cell_lineage'], all_anno[colnames(sh_mx), 'Development_day'],sep='-'), function(x){x}) # 985
+range(sapply(byt_byo,length)) # [1]    1 3566
+mn<-5 # merge by n
+byt_byo_len<- sapply(byt_byo,length)
+byt_byo_mx<- lapply( names(byt_byo)[byt_byo_len>=(mn*2)], function(g){ # 849 groups
+  x<- byt_byo[[g]]
+  cp<- floor(length(x)/mn)
+  xx<-x[sample(length(x))]
+  res<-do.call( cbind, tapply(xx[1:(cp*mn)], rep(1:cp, each=mn), function(y){ rowSums(sh_mx2[, y]) }) ) # faster
+#  system.time( res<-by( t(as.matrix(sh_mx2[, xx[1:(cp*mn)]])), rep(1:cp, each=mn), colSums, simplify=T) ) # slower
+  colnames(res)<- paste( g, 1:cp, sep='-')
+  print(g)
+  return(res)
+})
+dim(sh_meta<- do.call( cbind, byt_byo_mx))
+rm(byt_byo_mx)
+sh_meta_sp<- Matrix(sh_meta, sparse = TRUE) # 32143 75046
+writeMM( sh_meta_sp, file='shen_meta.mtx') # output the matrix of meta-cell
+print('finish meta-cell!')
+rownames(sh_meta_sp)<- comg
+colnm<- lapply( names(byt_byo)[byt_byo_len>=(mn*2)], function(g){ # 849 groups
+  x<- byt_byo[[g]]
+  cp<- floor(length(x)/mn)
+  res<- paste( g, 1:cp, sep='-')
+  return(res)
+})
+length(colnm<- unlist(colnm))
+colnames(sh_meta_sp)<- colnm
+sh_meta<- as.matrix(sh_meta_sp)
+write( colnames(sh_meta), file='sh_meta_colname.txt')
+write( rownames(sh_meta), file='sh_meta_rowname.txt')
+tmp<- sapply( colnames(sh_meta), function(x){ strsplit(x,split='-')[[1]][1] })
+dim(sh_meta_eye<- sh_meta[, tmp %in% 'Eye' ]) # output matrix for eye
+save(sh_meta_eye, file='sh_meta_eye.rdata')
+
+# re-compile annotation for Shendure's meta-cells
+meta_anno<- t(sapply( colnames(sh_meta), function(x){
+  xx<- strsplit(x, split='-')[[1]]
+  res<- c( xx[1], xx[2], paste(xx[1],xx[2],sep='-'), xx[3], shen_type_sys[xx[2],1])
+  return(res)
+}))
+colnames(meta_anno)<- colnames(all_anno)
+all_anno<- rbind(all_anno[ rownames(all_anno)%in% colnames(our_mx),], meta_anno)
+
+# The expected developmental systems of Shendure's cell types according to their annotation. Put this information into meta-data
+library(openxlsx)
+shtp_info<- read.xlsx('shen_77tp_od.xlsx',sheet=1,colNames=F,rowNames=T)
+shtp_info[shtp_info[,3]=='neural progenitor,neuron',3]<-'neuron'
+shtp_info[shtp_info[,3]=='trophoblasts',3]<-'unknown'
+sh_col<- scan('sh_meta_colname.txt',sep='\n', what=character(0))
+meta_anno<- t(sapply( sh_col, function(x){
+  xx<- strsplit(x, split='-')[[1]]
+  res<- c( xx[1], xx[2], paste(xx[1],xx[2],sep='-'), xx[3], shtp_info[xx[2],3])
+  return(res)
+}))
+colnames(meta_anno)<- colnames(all_anno)
+all_anno<- rbind(all_anno[ rownames(all_anno)%in% rownames(umap),], meta_anno) # final meta-data for our dataset and Shendure's meta cells
+sum( ! rownames(umap) %in% rownames(all_anno)) # 0
+
+# gene list
+tf291<- scan( '../../hs2hs/code/tf291.txt',what=character(0))
+tf<- scan('../../human/cross_embryo/code/humanTF_GO0003700_clear.txt', what=character(0))
+vis_rmg<- scan( '../../hs2hs/code/vis_rmg.txt',what=character(0))
+
+print('finish preparation')
+```
+
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# Integration by Seurat
+# calculate HVGs by our 3 stages and Shendure's data as a whole
+library(Seurat)
+seu<- lapply( c( our_mxs, list(sh_meta)), function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 1000)
+})
+length(features <- SelectIntegrationFeatures(object.list = seu))
+
+batch<- 'our_shen_meta' # HVGs by species
+length( features<- setdiff( features, vis_rmg) ) # 1761
+print(paste('HVG:',length(features)))
+write( features, file='our_shen_meta_bysam_hvg.txt')
+
+# merge by RPCA in Seurat by our + shendure
+rm(seu)
+seu<- lapply( list( our_mx, sh_meta), function(x){ CreateSeuratObject( x, min.cells = 0, min.features = 0 )})
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- NormalizeData(x)
+})
+seu <- lapply(X = seu, FUN = function(x) {
+    x <- ScaleData(x, features = features, verbose = FALSE)
+    x <- RunPCA(x, features = features, verbose = FALSE)
+})
+anchor <- FindIntegrationAnchors(object.list = seu, anchor.features = features, reduction = "rpca", reference=1, dims=1:50 ) #  
+seu_comb <- IntegrateData(anchorset = anchor)
+DefaultAssay(seu_comb) <- "integrated"
+# Run the standard workflow for visualization and clustering
+seu_comb <- ScaleData(seu_comb, verbose = FALSE)
+seu_comb <- RunPCA(seu_comb, npcs = 50, verbose = FALSE, features=features )
+seu_comb <- RunUMAP(seu_comb, reduction = "pca", dims = 1:30)
+umap<-seu_comb@reductions$umap@cell.embeddings
+pcac<- seu_comb@reductions$pca@cell.embeddings
+write.table( umap, file=paste('../plot/',batch,'_umap.txt',sep=''), col.name=F,quote=F,sep='\t') 
+```
+
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# plot features on Umap
+# color
+load('../../hs2hs/code/col4hs2hs.rdata')# colors
+sys_col<- c('antiquewhite',parts_col)
+names(sys_col)[1]<-'unknown'
+organ_col<- col6[1:length(unique(all_anno[,1]))]
+names(organ_col)<- unique(all_anno[,1])
+st_col<- c( col6[c(3,2,6)], colorRampPalette(c( col6[7], col6[5]) )( length(unique(all_anno[,4]))-3 ) )
+names(st_col)<- c('CS12','CS13','CS15',sort(as.numeric(as.character(unique(all_anno[,4])[-(1:3)]))))
+# color by main cell type of shendure
+sh_tp_col<- c( rep('lightgrey',19), colorRampPalette( col6[2:20] )(77) )
+names(sh_tp_col)<- unique(all_anno[,2])
+sh_tp_cen<- t(sapply( unique(all_anno[colnames(sh_meta),2]), function(x){
+  res<- c( mean( umap[ all_anno[rownames(umap),2]==x, 1]), mean( umap[ all_anno[rownames(umap),2]==x, 2]) )
+  return(res)
+}))
+
+# Colored by Shendure's expected systems and our systems
+all_anno[sh_col,5]<- shtp_info[all_anno[sh_col,2],3]
+plot_col<-sys_col2[as.character(all_anno[rownames(umap),5]) ]
+pdf(paste('../plot/',batch,'_system_both.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=plot_col[rand_ind],cex=0.2)
+dev.off()
+
+# Colored by stage
+st_col3<- c( col6[c(3,4,6)], rep(col6[2],5), rep(col6[5],9), rep(col6[7],4))
+names(st_col3)<-names(st_col)
+pdf(paste('../plot/',batch,'_stage3.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col='white',cex=0.2)
+ind<- sample( (1:nrow(umap))[as.character(all_anno[rownames(umap),4]) %in% names(st_col)[9:17]], size=40000)
+points( umap[ind,1], umap[ind,2], pch=16, cex=.2, col=st_col3[as.character(all_anno[rownames(umap),4])][ind])
+ind<- setdiff( rand_ind, ind)
+points( umap[ind,1], umap[ind,2], pch=16, cex=.2, col=st_col3[as.character(all_anno[rownames(umap),4])][ind])
+legend( 'topright', col=st_col3[c(1,2,3,4,12,21)], legend=c(names(st_col3)[1:3],'72~90d','94~119d','120~129d'), xpd=NA, bty='n', pch=16)
+dev.off()
+
+# color by Shendure's type
+pdf(paste('../plot/',batch,'_typeShenName.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=sh_tp_col[all_anno[rownames(umap),2]][rand_ind],cex=0.2)
+for(i in 1:nrow(sh_tp_cen)) text( sh_tp_cen[i,1], sh_tp_cen[i,2], label=i, xpd=NA, cex=1)
+dev.off()
+# legend
+pdf(paste('../plot/',batch,'_typeShenName_legend.pdf',sep=''),width=11,height=6)
+par(cex=2,las=1,mar=c(1,0,0,0),lwd=3)
+plot(0,0,xaxt='n',yaxt='n',frame=F, main='', xlab='',ylab='', xlim=c(1,10),ylim=c(1,10) )
+for(i in 1:3){
+  ind<-((i-1)*26+1):min(77,26*i)
+  legend( 3*(i-1)+1, 10, col=sh_tp_col[-(1:19)][ind],legend=paste(ind, names(sh_tp_col[-(1:19)][ind])), xpd=NA, bty='n', pch=16, cex=.5)
+}
+dev.off()
+
+# color by organs
+rand_ind<- sample.int( nrow(umap) )
+pdf(paste('../plot/',batch,'_organ.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3)
+plot(umap[rand_ind,1],umap[rand_ind,2],pch=16,xlab='umap-1',ylab='umap-2',frame=F,col=organ_col[as.character(all_anno[rownames(umap),1]) ][rand_ind],cex=0.2)
+legend( 'topleft', col=organ_col, legend=names(organ_col), xpd=NA, bty='n', pch=16)
+dev.off()
+pdf(paste('../plot/',batch,'_organ_legend.pdf',sep=''),width=3,height=7)
+par(cex=2,las=1,mar=c(0,0,0,0),lwd=3)
+plot.new()
+legend( 'topleft', col=organ_col, legend=names(organ_col), xpd=NA, bty='n', pch=16)
+dev.off()
+```
+
+```{r, echo=FALSE, out.width="50%"}
+library(knitr)
+include_graphics("../result/2022/our2022_shen_meta_rmOur3_typeOur_tj.png")
+include_graphics("../result/2022/our2022_shen_meta_rmOur3_stage3.png")
+include_graphics("../result/2022/our2022_shen_meta_rmOur3_typeShenName.png")
+include_graphics("../result/2022/our2022_shen_meta_rmOur3_organ.png")
+```

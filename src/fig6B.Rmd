@@ -1,0 +1,238 @@
+---
+title: "Fig. 6B"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Alignment with later stage human data
+
+### Fig. 6B: link between our data and Cao's human fetal data
+```{r, eval=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+# Slingshot distance calculated from LILAC2 (take 24 hrs)
+library(openxlsx)
+slin_dist<- read.table('../result/2022/our_shen_2022_sling_dist.txt',sep='\t',as.is=T)
+colnames(slin_dist)<- rownames(slin_dist)
+all_anno_sumt<- read.xlsx('../../2022/result/ficlu2022/all_anno_sumt.xlsx',sheet=1)
+shtp_od<- read.xlsx('shen_77tp_od.xlsx',sheet=1,colNames=F,rowNames=T)
+shtp_od[is.na(shtp_od)]<-''
+shtp_od[shtp_od[,2]=='eye',1]<-'eye'
+sh_sys_od<- length(unique(shtp_od[,1])):1
+names(sh_sys_od)<-c('eye','CNS','PNS','adenocorical cells','myocytes','mesenchyme','IM','endothelium','blood','endoderm','epithelium','trophoblasts')
+shtp<- rownames(shtp_od)[ order( sh_sys_od[shtp_od[,1]],shtp_od[,2],decreasing=T) ]
+
+# a meta data for all types
+our_ind<- sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][1] }) == 'our'
+shen_ind<- sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][1] }) == 'shen'
+all_meta<- cbind( sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][1] }),
+sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][2] }),
+c( sapply(sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][2] })[our_ind], function(x){ all_anno_sumt[ all_anno_sumt[,'in_Fig6B'] %in% x, 3][1] }), shtp_od[sapply( rownames(slin_dist), function(x){ strsplit(x,split='-')[[1]][2] })[shen_ind], 1] )
+)
+
+hs_in2<- setdiff(rownames(all_meta)[all_meta[,1]=='our'], 'our-PGC')
+sh_in<- rownames(all_meta)[all_meta[,1]=='shen']
+sh_in_od<- paste('shen-',shtp,sep='')[paste('shen-',shtp,sep='') %in% sh_in]
+
+# connection
+# 1) first consider mutual best match
+# 2) only allow our terminal cell types link to 1 Shendure's type
+prog<- paste('our-',c('NMP','PSM','optic vesicle'),sep='') # which have known lineage downstream and wound not link to shendure
+
+# mutual best
+mb1<- sapply( hs_in2, function(x){ sh_in[ which.min(slin_dist[sh_in,x]) ] })
+mb2<- sapply( sh_in, function(x){ hs_in2[ which.min(slin_dist[hs_in2,x]) ] })
+length(mb<- mb1[sapply( names(mb1), function(x){  mb2[mb1[x]]==x })]) # 18
+length(mb<- mb[ setdiff( names(mb), prog) ]) # 17
+# adjust distance for mutual best
+dim(mb_dist<-slin_dist[hs_in2, sh_in])
+mb_fold<- 3
+for(x in names(mb)){
+  y<-mb[x]
+  col_ind<- mb_dist[x,] > mb_dist[x,y]*mb_fold
+  row_ind<- mb_dist[,y] > mb_dist[x,y]*mb_fold
+  mb_dist[ rownames(mb_dist) %in% x , col_ind ] <- 9999
+  mb_dist[ row_ind , colnames(mb_dist) %in% y ] <- 9999
+}
+```
+
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+# find hit of Shendure type on adjust matrix (round 1)
+sh_hit<-apply(t(mb_dist[hs_in2,sh_in]), 1, function(x){ 
+  x[ hs_in2 %in% prog]<- rep(9999,length(prog))
+  res<- x
+  res[x==min(x)]<-1
+  res[x!=min(x)]<-0
+  return(res)
+})
+# terminal cells only allow 1 link
+terminal<- grep('terminal', hs_in2 , value=T)
+intersect( terminal , names(mb)) # none
+
+ter_hit<- lapply( terminal , function(x){ 
+  res<- setdiff( colnames(sh_hit)[sh_hit[x,]==1], names(col.block))
+  if(length(res)==0) return('')
+  return(res)
+})
+names(ter_hit)<- terminal
+intersect(unlist(ter_hit),mb) # character(0), check
+ter_bst<- sapply( terminal , function(x){ 
+  res<- setdiff( colnames(sh_hit)[sh_hit[x,]==1], names(col.block))
+  if(length(res)==0) return('')
+  if(length(ter_hit[[x]])==0) return('')
+  if(length(res)==1) return(res)
+  dist<- slin_dist[x,res]
+  return(names(dist)[which.min(dist)])
+})
+length(relink<- setdiff(setdiff(unlist(ter_hit),''), ter_bst))
+
+# relink cell types that link to terminal types (round 2)
+sh_hit<-sapply( sh_in, function(xx){ 
+  x<- as.numeric(t(mb_dist[hs_in2,xx]))
+  names(x)<- hs_in2
+  x[ hs_in2 %in% prog]<- rep(9999,length(prog))
+  if( xx %in% relink)  x[ hs_in2 %in% c(terminal,'our-neutrophil','our-Kuffer cell') ]<- rep(9999,length(terminal)+2) # 
+  res<- x
+  res[x==min(x)]<-1
+  res[x!=min(x)]<-0
+  return(res)
+})
+relink<-apply( sh_hit[,relink],2, function(x){ rownames(sh_hit)[x==1] }) # good
+unique(apply( sh_hit==1 ,2, sum )) # [1] 1, check
+sh_1st<- sapply( colnames( sh_hit), function(x){ rownames(sh_hit)[ sh_hit[,x]==1 ] }) # 1st link for each shendure type
+
+# search valid 2nd match (z-score on original distance)
+sh_dist<- slin_dist[ sh_in, hs_in2]
+sh_dist_zs<- t(apply( sh_dist, 1, function(x){ (x-mean(x))/sd(x) }))
+dim(sh_dist_zs<-sh_dist_zs[, !colnames(sh_dist_zs)%in% c(terminal,prog) ]) # remove terminal types, prognitor
+sh_dist_info<- cbind(  round(apply(sh_dist_zs,1,min),2), apply(sh_dist_zs,1, function(x){ colnames(sh_dist_zs)[which.min(x)]}),
+round(apply(sh_dist_zs,1,function(x){ sort(x)[2]}),2),  apply(sh_dist_zs,1, function(x){ colnames(sh_dist_zs)[order(x)[2]]}),
+round(apply(sh_dist_zs,1,function(x){ sort(x)[3]}),2),  apply(sh_dist_zs,1, function(x){ colnames(sh_dist_zs)[order(x)[3]]})
+)
+pop<- names(mb) # do not consider mutual best in 2nd match
+sh_2nd<-sapply( rownames(sh_dist_info), function(x, dist=sh_dist_info,cut=-2){ 
+  if( as.numeric(dist[x,3])> cut ) return('') 
+  if( dist[x,4]!= sh_1st[x] & !dist[x,4] %in% pop) return(dist[x,4]) # make sure 2nd link does not equal to the 1st link
+  else if( as.numeric(dist[x,5])<= cut & !dist[x,6] %in% c(pop,sh_1st[x]) ) return( dist[x,6])
+  else return('')
+})
+names(sh_2nd)<- rownames(sh_dist_info)
+length(sh_2nd<- sh_2nd[sh_2nd!='']) # 16
+cbind( sh_1st[names(sh_2nd)], sh_2nd) # check
+sum(sh_1st[names(sh_2nd)] == sh_2nd) # [1] 0
+
+# compile a total adjacency matrix
+sys<- unique(all_meta[hs_in2,3])
+sys2our<- sapply( hs_in2, function(x){
+  res<- rep( 0, length(sys))
+  names(res)<- sys
+  res[ all_meta[x,3] ]<-1
+  return(res)
+})
+sh_hit_mx<- matrix( 0, ncol=1+length(sys)+length(hs_in2)+length(sh_in), nrow=1+length(sys)+length(hs_in2)+length(sh_in) )
+rownames(sh_hit_mx)<- c('Root', sys, hs_in2, sh_in ) ->colnames( sh_hit_mx)
+sh_hit_mx[sys,hs_in2]<- sys2our[sys,hs_in2]
+sh_hit_mx[hs_in2,sys]<- t(sys2our[sys,hs_in2])
+sh_hit_mx[hs_in2, sh_in]<- sh_hit[hs_in2, sh_in]
+sh_hit_mx[sh_in, hs_in2]<- t(sh_hit[hs_in2, sh_in])
+sh_hit_mx['Root',sys] <- 1 -> sh_hit_mx[sys,'Root']
+# add 2nd link
+for(i in 1:length(sh_2nd)){ 
+  sh_hit_mx[ names(sh_2nd)[i], sh_2nd[i] ]<-1->sh_hit_mx[sh_2nd[i], names(sh_2nd)[i] ]
+}
+```
+
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+library(openxlsx)
+s1c<- read.xlsx('../../manu/revision/NCB_round1/Table_S1_cell_type.xlsx', sheet=4 )
+our_lin<- s1c[,c(6,8)]
+our_lin<- our_lin[ !duplicated(apply(our_lin, 1, paste, collapse=' ')),]
+our_lin<- our_lin[ !is.na(our_lin[,1]), ]
+our_lin[,1]<- paste( 'our-', our_lin[,1], sep='')
+our_lin[,2]<- paste( 'our-', our_lin[,2], sep='')
+dim(our_lin<- our_lin[our_lin[,1] %in% hs_in2, ])  # 16
+our_lin<- rbind( our_lin, c("our-progenitor.hindbrain", "our-neuron.hindbrain (terminal)"), c("our-progenitor.spinal cord","our-neuron.spinal cord (terminal)") ) # 18
+
+for(i in  1: nrow(our_lin)){
+  sh_hit_mx[ our_lin[i,1], our_lin[i,2] ]<-1
+  sh_hit_mx[ our_lin[i,2], our_lin[i,1] ]<-1
+}
+
+# igraph
+library(igraph)
+hs_in2_sys<- all_meta[hs_in2,3]
+s5<- read.xlsx('../result/2022/pre_st5.xlsx',sheet=2,colNames=T,rowNames=F) # developmental system of Shendure's cell types
+shtp_info<- s5[,1:3]
+rownames(shtp_info)<- paste('shen-',shtp_info[,1],sep='')
+col.block2<- c(col.block,col.block[c('neuron')],'grey')
+names(col.block2)[20:21]<- c("neural progenitor,neuron", "unknown")
+tmp<-unique(read.table('../../type_all_col3.txt',sep='\t',as.is=T,comment.char='')[,2])
+col6<-c('lightgrey','red',tmp[3],'purple',tmp[2],tmp[5],'blue','green4','orchid','turquoise','sienna',tmp[9],'yellow2','hotpink','navy','steelblue','skyblue','pink','black',tmp[4],rainbow(7))
+
+sh_dist_zs2<- t(apply( sh_dist, 1, function(x){ (x-mean(x))/sd(x) })) # for line width
+hit<- graph_from_adjacency_matrix( sh_hit_mx[-1,-1], mode='undirected')
+V(hit)$color<- c( rep(NA,length(sys)),col.block[hs_in2_sys[hs_in2]], col.block2[shtp_info[sh_in,2]] )
+V(hit)$frame.color<- c( rep('white',length(sys)),col.block[hs_in2_sys[hs_in2]], col.block2[shtp_info[sh_in,2]] )
+V(hit)$label.cex<- .5
+V(hit)$label.color<- 'black'
+our_lab<- sapply(hs_in2, function(x){ strsplit(x,split='-')[[1]][2]})
+our_lab[grep('\\(',our_lab)]<- sapply(our_lab[grep('\\(',our_lab)], function(x){ trimws(strsplit(x,split='(',fixed=T)[[1]][1]) })
+our_lab[our_lab=='lung proximal epithelium and trachea']<- 'lung proximal epithelium/trachea'
+sh_lab<- sapply(sh_in, function(x){ strsplit(x,split='-')[[1]][2]})
+V(hit)$label<- c( rep('',15), our_lab, sh_lab)
+V(hit)$shape<- c( rep('circle',length(sys)), rep('circle',length(hs_in2)), rep('square',length(sh_in)) )
+#V(hit)['our-neocortex intermediate progenitor']$color<-col.block['neural progenitor']
+#V(hit)['our-neocortex intermediate progenitor']$frame.color<-col.block['neural progenitor']
+E(hit)$color<-'black'
+for(i in 1:length(sh_2nd)) E(hit)[sh_2nd[i] %--% names(sh_2nd)[i] ]$color<-'darkgrey'
+E(hit)[.inc(sys)]$color<-'white'
+E(hit)$lty<-1
+for(i in 1:length(sh_1st)) E(hit)[sh_1st[i] %--% names(sh_1st)[i] ]$width<- abs(sh_dist_zs2[names(sh_1st)[i],sh_1st[i] ])
+for(i in 1:length(sh_2nd)){
+  E(hit)[sh_2nd[i] %--% names(sh_2nd)[i] ]$width<- abs(sh_dist_zs2[names(sh_2nd)[i],sh_2nd[i] ])
+} 
+for(i in 1:nrow(our_lin)){
+  E(hit)[our_lin[i,1] %--% our_lin[i,2] ]$width<- 3
+  E(hit)[our_lin[i,1] %--% our_lin[i,2] ]$color<- 'darkorange1'
+  E(hit)[our_lin[i,1] %--% our_lin[i,2] ]$lty<- 1
+}  
+for(i in 1:length(mb)) E(hit)[mb[i] %--% names(mb)[i] ]$color<- 'red'
+good_lay=layout_nicely(hit)
+```
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+# plot by igraph
+library(openxlsx)
+library(igraph)
+str2pos<- c(0,  pi, -pi/2, pi/2, -pi/4)
+names(str2pos)<- c('right','left','up','down', 'cen')
+ver_info<- read.xlsx('../result/2022/hs2hs_vertext_lab_pos.xlsx',sheet=2,colNames=F)
+ver_lp<- str2pos[ver_info[,2]]
+ver_ld<- as.numeric(ver_info[,3])
+#pdf('../result/2022/our_shen_circle_2nd_ter_mb_vlp.pdf',width=8,height=8)
+par(mar=c(.1,1.2,.5,.7))
+plot(hit, vertex.size=4 , vertex.label.dist=ver_ld, vertex.label.degree =ver_lp,layout=good_lay, vertex.label.cex=.6 )
+legend('topleft', col=c('black','black'), legend=c('CS12-CS16','72-129d'),xpd=NA,pch=c(16,15) )
+legend('topright', col=c('darkorange1','red','black','darkgrey'), legend=c('this dataset','mutual best', 'best match','2nd match'),xpd=NA,lty=1,lwd=3)
+#dev.off()
+```
+
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+# output matching results as Supp. table
+shtp_sum<- cbind( shtp_info, 
+sapply( rownames(shtp_info), function(x){ 
+ if(!x %in% mb) return('')
+ else return( strsplit( names(mb)[mb==x], split='-')[[1]][2] )
+}),  
+sapply( rownames(shtp_info), function(x){ 
+ if(!x %in% names(sh_1st)) return('')
+ else return( strsplit( sh_1st[x], split='-')[[1]][2] )
+}),  
+sapply( rownames(shtp_info), function(x){ 
+ if(!x %in% names(sh_2nd)) return('')
+ else return( strsplit( sh_2nd[x], split='-')[[1]][2] )
+})
+)
+colnames(shtp_sum)<- c('cell type in Cao 2020','developmental system', 'index in Fig. S15B', 'mutual best match in our dataset if avaiable', 'best match in our dataset','second-best match (distance z-score < -2) in our dataset')
+shtp_sum<- shtp_sum[ order(shtp_sum[,2]), ]
+write.table( shtp_sum, file='../result/2022/shtp_sum.txt', sep='\t', quote=F, row.name=F)
+```

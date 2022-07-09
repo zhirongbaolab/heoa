@@ -1,0 +1,216 @@
+---
+title: "Fig. 5 & supple."
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Figures on LIN28A
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# plot LIN28A between early and late
+load('temporal.rdata')
+load('../lin28_in_f1_mn_cnum40.rdata') # from lilac: ~/2022/code/merge_matrix.r: mean expression of LIN28A in each cell type
+tmp<-unique(read.table('../../../type_all_col3.txt',sep='\t',as.is=T,comment.char='')[,2])
+col6<-c('lightgrey','red',tmp[3],'purple',tmp[2],tmp[5],'blue','green4','orchid','turquoise','sienna',tmp[9],'yellow2','hotpink','navy','steelblue','skyblue','pink','black',tmp[4],rainbow(7))
+
+dim(f1_st3_mn) # [1] 82  6
+la_ct_mn<- f1_st3_mn[,c(1,3,5)]
+la_ct_ci<- f1_st3_se[,c(1,3,5)]
+colnames(la_ct_mn)<- c('CS12','CS13-14','CS15-16')-> colnames(la_ct_ci)
+st_col<- col6[c(10,2,3)]
+names(st_col)<- c('CS12','CS13-14','CS15-16')
+col_sep<-sapply(1:(length(unique(la_tp_sys))-1),function(x){ sum(table(la_tp_sys)[unique(la_tp_sys)][1:x]) })
+#pdf('../result/temporal/lin28a_type_by_stage.pdf',width=25) # use SE
+par(cex=2,las=1,mar=c(2,4,0,0),lwd=3,pch=16)
+j<-0 # Why a i and a j?
+for(i in 1:dim(la_ct_mn)[1]){
+  plot_mn<- la_ct_mn[i,1:3]
+  plot_ci<- la_ct_ci[i,1:3]
+  plot_col<- st_col[plot_mn!= -1]
+  plot_ci<-plot_ci[plot_mn!= -1]
+  plot_mn<-plot_mn[plot_mn!= -1]
+  if( T ) j<-j+1 else{
+    j<-j+3 # separator
+    lines( c(j-1.5,j-1.5), c(0,3), lty=2)
+  }
+  if(i==1) plot( rep(j,length(plot_mn)), plot_mn, col=plot_col , xlab='', ylab='UMI mean', main='', frame=F, xlim=c(1,nrow(f1_st3_mn)),ylim=c(0,1.8),xaxt='n',xpd=NA)
+  else points( rep(j,length(plot_mn)), plot_mn, col=plot_col ,xpd=NA)
+  ind<- names(plot_mn) %in% c('CS15-16')
+  if(sum(ind)>0) arrows( rep(j,length(plot_mn[ind])), plot_mn[ind], rep(j,length(plot_mn[ind])), plot_mn[ind]+plot_ci[ind], length = 0.1, angle = 90, col=plot_col[ind],xpd=NA  )
+  ind<-'CS13-14'
+  arrows( rep(j,length(plot_mn[ind])), plot_mn[ind], rep(j,length(plot_mn[ind])), plot_mn[ind]-plot_ci[ind], length = 0.1, angle = 90, col=plot_col[ind],xpd=NA)
+  if( 'CS12' %in% names(plot_mn) & i!=74){ # neutrophil too few early cells
+  ind<-'CS12'
+  arrows( rep(j,length(plot_mn[ind])), plot_mn[ind], rep(j,length(plot_mn[ind])), plot_mn[ind]-plot_ci[ind], length = 0.1, angle = 90, col=plot_col[ind],xpd=NA)
+  }
+}
+for(j in col_sep) lines( c(j+.5,j+.5), c(0,1.5), lty=2)
+#dev.off()
+
+# Number cell types with large FD of lin28a
+la_jump<- t(apply(la_ct_mn, 1, function(x){
+  if(x[1]==-1) x[1]<-x[2]
+  res1<-ifelse( x[1]==0, (x[3]+.1)/(x[1]+.1), x[3]/x[1] )
+  mn1<-x[1];mn2<-x[3]  
+  res2<- ifelse( min(mn1,mn2)<0.1, log2((mn1+0.1)/(mn2+0.1)), log2(mn1/mn2)) # same with cal_wilp2, not good
+  res<-c(res1,res2)
+  return(res)
+}))
+sapply( c(1/4,1/3,1/2), function(x){ sum( la_jump[,1]<= x) })
+sapply( c(1.5,2:4), function(x){ sum(la_jump[,2]>=x) })
+# histogram on FD
+plot_data<-1/la_jump[,1] #
+plot_data[plot_data>20]<-20
+#pdf(paste('../result/temporal/la_jump_fd.pdf',sep=''),width=5,height=5)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=5,pch=16)
+hist( plot_data, main='Human', ylab='Number of cell types', xlab='Fold difference', breaks=0:20)
+text( 18,-8, label='>', xpd=NA)
+#dev.off()
+sum(la_jump[,1]<1/2)/ nrow(la_jump) # [1] 0.9634146
+```
+
+# Systemically changing genes
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+load('../lin28_st2_in_f1_mn_cnum40.rdata')
+load('../../../2022/result/ficlu2022/c313_mn_fr.rdata')
+gene<-read.table('../../../10x/head/filtered_gene_bc_matrices/filtered_gene_bc_matrices/GRCh38/genes.tsv',sep='\t',as.is=T) # [1] 33694     2
+ge2an<-gene[,2]
+names(ge2an)<-gene[,1]
+get_id<-function(x){ sapply(x, function(y){names(ge2an)[ge2an==y][1]})}
+heart_batch<- get_id(c(scan('/Volumes/baolab/xuy/human/batch/heart_paper_batch.txt',what=character(0)),'XIST'))
+length(in_gene<- setdiff( names(ge2an), c(heart_batch, get_id('XIST') )))
+in_gene<- in_gene[ in_gene %in% rownames(c313_mn) ]
+length(in_gene3<- in_gene[ apply( (c313_mn[in_gene,]>=0.5&c313_fr[in_gene,]>=.25),1,sum )>0 ]) # [1] 8142, as initial genes
+# also remove top lysis genes from DEGs
+load('../../../2022/code/lysis_topg.rdata')
+length(in_gene3<-setdiff( in_gene3, unlist(lysis_topg)) ) # 8010
+
+# fold change between late and early
+f1_st2_mn_all<- f1_st2_mn
+f1_st2_mn<- list( f1_st2_mn_all[[1]][in_gene3,], f1_st2_mn_all[[2]][in_gene3,] ) # filter for 'in_gene3'
+sapply(f1_st2_mn,dim)
+
+cal_fd_by_mn<- function(mn1,mn2, cut_mean=0.5, low_comp=.1 ){ # if min < 0.1, then +.1
+  data<-cbind(mn1, mn2)
+  vmin<- apply( data, 1, min)
+  vmax<- apply( data, 1, max)
+  is_high<- vmax>=cut_mean
+  data[vmin< low_comp,]<- data[vmin< low_comp,] + low_comp
+  fd<- log2(data[,2]/data[,1])  # mn2 / mn1 !!!!
+  fd[!is_high]<-0 # set to 0 FD for low-expressed genes
+  return(fd)
+}
+clu_temp_fd<- mapply( cal_fd_by_mn, mn1= split(t(f1_st2_mn[[1]]), 1:ncol(f1_st2_mn[[1]])), mn2= split(t(f1_st2_mn[[2]]), 1:ncol(f1_st2_mn[[2]])), MoreArgs=list(cut_mean=.3) )
+sum(is.na(clu_temp_fd)) # [1] 0
+rownames(clu_temp_fd)<- rownames(f1_st2_mn[[1]])
+colnames(clu_temp_fd)<- colnames(f1_st2_mn[[1]])
+
+# define SCGs
+# 1) at least 1 type >= 2-fold; 2) > 50% types with FD > 'cut_fd1' or FD < -'cut_fd1'
+cut_fd1<-log2(1.5)
+cut_pt1<- .5
+cut_fd2<-log2(1.5)
+cut_pt2<- .3
+length(scg<- rownames(clu_temp_fd)[ rowSums(abs(clu_temp_fd)>=1)>1 & ( rowSums(clu_temp_fd>=cut_fd1)>= cut_pt1*ncol(clu_temp_fd) | rowSums(clu_temp_fd<= -cut_fd1)>= cut_pt1*ncol(clu_temp_fd) ) ] )
+# 3) define inconsistent: n type with FD > cut_fd2 and n type with FD < -cut_fd2
+cut_n2<- 1
+length( scg_inc <- scg[apply(clu_temp_fd[scg, ], 1, function(x){ sum(x>cut_fd2)>= cut_n2 & sum(x< -cut_fd2)>=cut_n2 })] )
+length( scg<- setdiff( scg, scg_inc ) )
+
+# divide systemically changing genes into 3 patterns: glo down, glo down with low expression at heart/endothelium/blood, glo up
+col_sep<- sapply( 1:(length(unique(la_tp_sys))-1), function(x){ sum(la_tp_sys %in% unique(la_tp_sys)[1:x] ) })
+l4s<- colnames(clu_temp_fd)[ la_tp_sys %in% c('splanchnic LPM','endothelium','blood') ][-(1:4)]
+lex_ratio<- .6
+scg_pat<- list( scg[rowSums(clu_temp_fd[scg,])<0 & rowSums(clu_temp_fd[scg,l4s]==0)>=lex_ratio*length(l4s) ],
+scg[rowSums(clu_temp_fd[scg,])<0 & rowSums(clu_temp_fd[scg,l4s]==0)<lex_ratio*length(l4s) ],
+scg[rowSums(clu_temp_fd[scg,])>0] )
+sapply( scg_pat<- lapply(scg_pat, function(x){ scg_od[scg_od %in% x]}), length) # order:  80 388  78
+scg_pat<- lapply(scg_pat,function(x){ x[order(rowSums(clu_temp_fd[x,]))] } )# order by FD?
+plot_mx<-clu_temp_fd[ unlist(scg_pat),]
+plot_mx[plot_mx>2]<-2
+plot_mx[plot_mx< -2]<- -2
+row_sep<- sapply( 1:2, function(x){ length(unlist(scg_pat[1:x])) })
+#pdf(paste('../result/temporal/scg_pat_temp_fd.pdf',sep=''),width=7,height=12)
+tmp<-heatmap3( plot_mx,labRow=NA,labRow2=NA,scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='log2 FD',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labCol='',labRow_pos=c(2,4),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=.5, ColSideColors= col.block[la_tp_sys[colnames(plot_mx)] ], colsep=col_sep, rowsep=row_sep)
+#dev.off()
+# output human SCG with group and cell type information
+scg_out<- cbind( 'stage 3', rep(c('down','down','up'), sapply(scg_pat,length)), unlist(scg_pat), ge2an[unlist(scg_pat)], rep(c(1:3), sapply(scg_pat,length)), clu_temp_fd[unlist(scg_pat),] )
+scg_out<- rbind( la_tp_sys[colnames(scg_out)], scg_out)
+colnames(scg_out)[1:5]<- c('stage','up or down','ID','Symbol','Group')
+#write.table(scg_out, file=paste('../result/glo/hs_dp.txt',sep=''), sep='\t',quote=F,row.name=T)
+# UPDATE in ../result/table/Table_S3_LIN28_gene.xlsx
+```
+
+# target enrichment
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=F}
+# global non-changed genes as control: 0 type with FD > 1.5 and > 50% type expressed
+length(ntg <- rownames(clu_temp_fd) [ rowSums(abs(clu_temp_fd)>=log2(2))==0 & rowSums(clu_temp_fd!=0)>=.5*ncol(clu_temp_fd) ])
+rb_gene<- read.table('../../../cross_embryo/code/rb_gene81.txt',sep='\t',as.is=T)[,1]
+length(ntg<- sample( setdiff(ntg,rb_gene), 200))
+sum(ntg %in% scg) # 0
+
+# a function for enrichment test
+test_enrich_logic2<- function( diag, test, total){ # logic 2 and 4 use the same function but different gene set
+  y<- diag[ diag %in% total]
+  x<- test[ test %in% total]
+    test_mx<- matrix( c( sum( x %in% y), sum( x %in% setdiff(total,y) ), sum( y %in% setdiff(total,x)), sum( setdiff(total,x) %in% setdiff(total,y) ) ), nr=2)
+    pv<- fisher.test(test_mx)$p.value
+    od<- fisher.test(test_mx)$estimate
+    return( c(pv, sum(x%in%y),length(y), sum(x%in%y)/length(x), length(y)/length(total), length(x), od ) )
+}
+
+# lin28a target
+plot_enrich_tar<-function(mx, back, ratio,name, path='../result/temporal/',title='',perc_col,wd=7,adj=25,lab_cex=.5, main_cex=1){
+#pdf(paste(path,name,'.pdf',sep='') ,height=5,width=wd)
+par(cex=2,las=1,mar=c(2,4,4,0),lwd=1,pch=16 )
+tmp<-barplot(mx, col=c('grey','red') , ylab='Number of genes',main=title, names.arg=rep('',ncol(mx)), cex.main=main_cex)
+text( tmp, par('usr')[3]-(par('usr')[4]-par('usr')[3])/8, colnames(mx), xpd=NA,cex=lab_cex)
+text( tmp, par('usr')[4]*1.15, label=paste(round(ratio,2),sep=''), xpd=NA,cex=1, col=perc_col)
+#text( tmp, apply(mx,2,sum)+adj, label=apply(mx,2,sum), cex=.6,xpd=NA)
+text( par('usr')[1]-(par('usr')[2]-par('usr')[1])/8, par('usr')[4]*1.15, label= round( back, 2), cex=1, xpd=NA, col='darkgrey')
+#dev.off()
+}
+
+length(yeo_hes<-unique(unlist(get_id(read.table('../../targets/gene_yeo_2012/hg18_refgene_lin28ES.txt',sep='\t',as.is=T)[,4])))) # 5400, lin28a target list
+length(hg18_allg<- scan('../../temporal/code/hg18_allg.txt',what=character(0))) # 20522
+hs_glo<- tapply(scg, apply(clu_temp_fd[scg,],1,mean)>0, function(x){x}) # down-regulated, up-regulated
+tempg_allg<- c( hs_glo, list(ntg) )
+names(tempg_allg)<-c('sys DN','sys UP','sys NC')
+(tempg_glogl_yh<- sapply(tempg_allg, function(x){ test_enrich_logic2( diag=yeo_hes, test= x, total=in_gene3 ) }))
+#tempg_glogl_yh[4,]/tempg_glogl_yh[5,] # odds ratio
+plot_mx<- rbind( sapply(tempg_allg,length)-tempg_glogl_yh[2,] , tempg_glogl_yh[2,])
+plot_col<- rep('black', ncol(plot_mx))
+plot_col[tempg_glogl_yh[1,]<0.001 & tempg_glogl_yh[7,]>2 ]<-'red'
+plot_col[tempg_glogl_yh[1,]<0.001 & tempg_glogl_yh[4,]< -2 ]<-'blue'
+plot_enrich_tar(mx=plot_mx, back=tempg_glogl_yh[5,1], ratio=tempg_glogl_yh[4,], name='tempg_glo_group_yes_hes',title='LIN28A pull down',perc_col=plot_col,wd=5,adj=15,lab_cex=.8)
+
+# let-7 targets
+ts_let7<- unlist(unique(get_id( read.table(file='../../targets/let-7/targetscan/TargetScan7.2__let-7-5p_98-5p.predicted_targets.txt', sep='\t', as.is=T,header=T,comment.char='',quote='',fill=T)[,1] ))) # only take targets of let-7-5p/98-5p  
+(tempg_glogl_l7ts5<- sapply(tempg_allg, function(x){ test_enrich_logic2( diag=ts_let7, test= x, total=in_gene3) }))
+plot_mx<- rbind( sapply(tempg_allg,length)-tempg_glogl_l7ts5[2,] , tempg_glogl_l7ts5[2,])
+plot_col<- rep('black', ncol(plot_mx))
+plot_col[tempg_glogl_l7ts5[1,]<0.001 & tempg_glogl_l7ts5[4,]> 2 ]<-'red'
+plot_col[tempg_glogl_l7ts5[1,]<0.001 & tempg_glogl_l7ts5[4,]< -2 ]<-'blue'
+plot_enrich_tar(mx=plot_mx, back=tempg_glogl_l7ts5[5,1], ratio=tempg_glogl_l7ts5[4,], name='tempg_glo_group_let7_ts5p_3',title='let-7 targets',perc_col=plot_col,wd=5,adj=15,lab_cex=.8)
+```
+
+
+# Number of systemically changing genes of 4 species
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+#load(file='../../evo-devo/code/allg_hs.rdata') # load systemically changing genes from other species
+sapply(allg_hs,length) # update human and mouse down-phase global genes
+allg_hs[[1]]<-list( ge2an[hs_glo[[1]] ], ge2an[hs_glo[[2]]] )
+
+# Number of genes for each species
+#pdf(paste('../result/glo/global_num_phase_species.pdf',sep=''),height=3.5,width=3.5)
+par(cex=2,las=1,mar=c(2,4,3,1),lwd=3,pch=16,mfrow=c(2,2))
+for(i in 1:4){
+  ind<- list( 7:6, 5:4, 3:2, 1)[[i]]
+  sp<- c('Zebrafish','Frog','Mouse','Human')
+  if(i<4) plot_data<- cbind( sapply(allg_hs[[ind[1]]],length), sapply(allg_hs[[ind[2]]],length) ) else plot_data<- cbind(c(0,0),sapply(allg_hs[[ind[1]]],length))
+  bar<-barplot( plot_data, col=c('blue','red'), beside=T, ylab='Number of genes', main=sp[i] , border=NA, names.arg=c('','') )
+  text( apply(bar,2,mean), par('usr')[3]-(par('usr')[4]-par('usr')[3])/10, label=c(expression(1%->%2),expression(3 %->% 4)),xpd=NA)
+}
+#dev.off()
+```

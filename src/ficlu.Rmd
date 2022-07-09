@@ -1,0 +1,573 @@
+---
+title: "Fig. 1 & supple."
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Figures on cell type identification
+
+### Fig. 1A: color Umap of cell types by developmental system
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+load('ficlu.rdata') # load meta data of cells/cell types
+library(openxlsx)
+sys_cl<- sapply( all_clu_od, function(x){ unname(unlist(x)) }) # 'all_clu_od': list of clusters
+sys_cl_ind<- rep( names(sys_cl), sapply(sys_cl,length) )
+names(sys_cl_ind)<- unlist(sys_cl)
+
+tf_umap2<-tf_umap
+tf_umap2[,2]<- -tf_umap[,2]
+clu_cen<-t( sapply(names(sys_cl), function(x){
+  cl<-intersect( rownames(tf_umap2), names(sys_cl_ind)[sys_cl_ind==x] )
+  return(apply(tf_umap2[cl,],2,mean))
+}))
+plot_ind<- sample.int(dim(tf_umap2)[1])
+#pdf(paste('../result/ficlu2022/system_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3)
+plot(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2],pch=16,xlab='',ylab='',frame=F,col=col.block[sys_cl_ind[rownames(tf_umap2)[plot_ind]]],cex=0.1,main='',xaxt='n',yaxt='n')
+plot_ind<- names(sys_cl_ind)[sys_cl_ind %in% 'IM']
+points(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2], col=col.block['IM'], cex=.1, pch=16)
+#dev.off()
+```
+
+### Fig. 1B, 1C: spatial and temporal distribution in cell types
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# temporal
+clu_emb<-t( sapply( rownames(all_anno_sumt), function(x){ # 'all_anno_sumt' is the meta data
+  cl<- rownames(allc_anno)[ as.character(allc_anno[,1]) %in% x]
+  res<-rep(0,7)
+  names(res)<-c('7','0','21','22','5','9','6')
+  emb<-table(get_emb(cl))
+  res[ names(emb) ]<- emb
+  return(res)
+  }
+))
+clu_embst<-t(apply( clu_emb, 1, function(x){
+  res<- tapply( x, rep(c('CS12','CS13-14','CS15-16'),c(1,3,3)), sum)
+  return(res)
+}))
+sys_gp<- lapply( list( 1:3, 4:9, 10:12, 13:19), function(x){ names(col.block)[x] })
+#pdf('../result/ficlu2022/clu_st_bar.pdf')
+par(las=1,mar=c(2.5,4,1.5,1),lwd=2,pch=16, mfrow=c(4,1) )
+for(i in 1:4){
+  tp<- rownames(all_anno_sumt)[ as.character(all_anno_sumt[,3]) %in% sys_gp[[i]] ]
+  er<- which(tp %in% miss0)
+  sep<- sapply( 1:length(sys_gp[[i]]), function(x){ sum( as.character(all_anno_sumt[,3]) %in% sys_gp[[i]][1:x] ) })
+  plot_data<- apply( clu_embst[ tp, ], 1, function(x){ x/sum(x)*100})
+  bar<-barplot( plot_data, xlab='', ylab='Fraction of stage (%)' , col=col6[c(10,2,3)], border=NA, names.arg=rep('',length(tp)) )
+  if( sum(er)>0 ) text( bar[er], rep( 105, sum(er)), label=rep('*', sum(er)), xpd=NA, col='red', cex=2)
+  abline(v=0)
+  for(j in 1:length(sep)) abline( v=bar[sep[j]]+ (bar[2]-bar[1])/2 )
+}
+leg_pos<-seq(bar[20],bar[40],length.out=3) 
+for(i in 1:3) legend( leg_pos[i], par('usr')[3]-1, pch=15, col=col6[c(10,2,3)][i], legend=c('CS12','CS13-14','CS15-16')[i], bty='n',xpd=NA, cex=1.5)
+#dev.off()
+
+# search for hard error: missing 0710
+length(miss0<- rownames(clu_embst)[apply( clu_embst, 1, function(x){ x[2]/sum(x)< 0.05 & x[1]/sum(x)>0.05 & x[3]/sum(x)>0.05  & sum(x)>50 & x[2]<5 & x[1]>5 & x[3]>5 })] ) # 1: "neural progenitor-11" in 'miscellaneous'
+# p value of missing
+stp<- colSums(clu_embst)/sum(clu_embst)
+# when 0.05 is applied 
+50*0.05 # [1] 2.5
+sum( dpois(0:2, lambda=50*stp[2]) ) # 2.275918e-08
+# when 5 is applid
+5/0.05 # total cells: 100
+sum( dpois(0:4, lambda=100*stp[2]) ) # [1] 1.270153e-15
+# so p value = 2.275918e-08
+
+
+# plot stages on Umap
+get_embst<-function(x){
+  emb<-gsub("[A-z]", "", sapply(x,function(y){ strsplit(y,split='_')[[1]][1] }) )
+  if(emb=='7') res<-'CS12' else if( emb %in% c('0','21','22') ) res<-'CS13-14' else res<-'CS15-16'
+  return(res)
+}
+tf_umap_st<- sapply( rownames(tf_umap2), get_embst)
+st_col<- col6[c(10,2,3)]
+names(st_col)<-c('CS12','CS13-14','CS15-16')
+length(cs13_lm<-sys_cl[['limb']][ tf_umap_st[sys_cl[['limb']]]=='CS13-14' & tf_umap2[sys_cl[['limb']],1]>1 ])
+length(cs12_lm<-sys_cl[['limb']][ tf_umap_st[sys_cl[['limb']]]=='CS12' ])
+plot_ind<- rownames(tf_umap2)[sample.int(dim(tf_umap2)[1])]
+#pdf(paste('../result/ficlu2022/stage_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3, mfrow=c(1,1))
+plot(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2],pch=16,xlab='',ylab='',frame=F,col=st_col[tf_umap_st[plot_ind]],cex=0.1,main='', xlim=range(tf_umap2[,1]), ylim=range(tf_umap2[,2]), xaxt='n',yaxt='n')
+legend( 'topleft', pch=16, col=st_col, legend=c('CS12','CS13-14','CS15-16'), bty='n',xpd=NA, cex=1)
+#dev.off()
+
+
+# spatial source
+get_bd<- function(x){ strsplit( x, split="[0-9]+")[[1]][1] }
+clu_body<- sapply( rownames(all_anno_sumt), function(x){
+  cl<- rownames(allc_anno)[ as.character(allc_anno[,1]) %in% x]
+  res<- rep(0,8)
+  names(res)<- c("h", 't','l','v','ht','lv','vl','tv')
+  stat<- table(sapply( cl, get_bd))
+  res[ intersect( names(stat), names(res) ) ]<- stat[intersect( names(stat), names(res) )]
+  return(res)
+})
+# plot for some cell types
+bd_col<- c('#8FAADC','#D0CECE','#A9D18E','#F4B183')
+names(bd_col)<- c('h','t','l','v')
+plot_tp<-c('brain-2', 'neuron-18', 'heart-6', 'blood-5', 'endothelium-2','craniofacial-18','craniofacial-22')
+plot_mx<- apply(clu_body[1:4,plot_tp], 2, function(x){ x*100/sum(x) })
+plot_mx<- cbind( plot_mx[,1:3], rep(0,4), plot_mx[,4:5], rep(0,4), plot_mx[,6:7])
+#pdf('../result/ficlu2022/body_case_4color.pdf',height=4,width=6)
+par(cex=2,las=1,mar=c(0.5,4,.5,0),lwd=3,pch=16)
+bar<-barplot( plot_mx , names.arg=rep('',9), ylab='Sample source of cells (%)', col=bd_col,border=NA)
+text( bar[-c(4,7)], rep(50,7), label= all_anno_sumt[plot_tp,'anno1'], srt=90,xpd=NA, cex=.7)
+#dev.off()
+
+# all cell types
+sp_rule<- read.xlsx('../result/ficlu2022/spatial_rule.xlsx',sheet=1, colNames=T) # old rule
+rownames(sp_rule)<-sp_rule[,1]
+# Rules for new clusters
+old_rule_key<- paste( sp_rule[,3], sp_rule[,4])
+old_rule_key[c(1,137)]<- c("neural progenitor anteromedial cerebral pole (ACP)","head mesoderm undefined (CYP26C1)")
+sp_rule<- apply( all_anno_sumt, 1, function(x){
+  nm<- paste( x[3], x[4] )
+  rule<- sp_rule[ old_rule_key %in% nm, 6:12][1,]
+  return(rule)
+})
+sum(is.na(sp_rule)) # [1] 0
+sp_rule<- do.call('rbind', sp_rule)
+sp_rule<-sp_rule[, c(1:4,6,5,5,7)]
+colnames(sp_rule)<- rownames(clu_body)
+clu_spe<-t(sapply(1:ncol(clu_body), function(x){  # error on body
+  res<- c(0,0)
+  names(res)<-c(0,1)
+  stat<-  tapply(clu_body[ ,x], as.numeric(sp_rule[x,]), sum)
+  res[ intersect( names(res), names(stat) )]<- stat[ intersect( names(res), names(stat) )]
+  return(res)
+}))
+rownames(clu_spe)<- colnames(clu_body)
+sum(clu_spe[,1])/sum(clu_spe)
+
+# output as Table S1E
+# rule
+sum(rownames(sp_rule)== colnames(clu_body)) # [1] 313
+sp_rule_out<-cbind( all_anno_sumt[rownames(sp_rule),c(2,3,5)],sp_rule[c(1:4,6,5,8)] )
+colnames(sp_rule_out)[-(1:3)]<- c('head','trunk','limb','visera','lv','ht','tv')
+#write.table(sp_rule_out, file='../result/ficlu2022/sp_rule_out.txt',sep='\t',quote=F, row.name=F)
+# statistics of cell number
+body_out<- t( clu_body)[,c(1:4,6,5,8)]
+body_out[,'lv']<- body_out[,'lv'] + clu_body['vl',]
+sum(body_out) # [1] 185140, check
+colnames(body_out)<- c('head','trunk','limb','visera','lv','ht','tv')
+#write.table(body_out, file='../result/ficlu2022/body_out.txt',sep='\t',quote=F, row.name=F)
+
+
+#pdf('../result/ficlu2022/clu_body_bar.pdf')
+par(las=1,mar=c(2.5,4,1.5,1),lwd=2,pch=16, mfrow=c(4,1) )
+for(i in 1:4){
+  tp<- rownames(all_anno_sumt)[ as.character(all_anno_sumt[,3]) %in% sys_gp[[i]] ]
+  body<- t(clu_body)[tp,]
+  ind<-  tp %in% paste('limb-',c(1:47), sep='')  # adjust for 'lv/vl' in limb
+  if(sum(ind)>0) body[ ind,3 ]<- body[ind,3]+ body[ind,6] + body[ind,7]
+  if( sum( rowSums(body[,1:4]!=0)==0 )>0  ){ # if h/t/l/v all 0
+    ind<- rowSums(body[,1:4]!=0)==0
+    for(j in (1:nrow(body))[ind]){
+       print(rownames(body)[j])
+       body[j,1]<- body[j,5]/2
+       body[j,2]<- body[j,5]/2 + body[j,8]/2
+       body[j,3]<- body[j,6]/2 + body[j,7]/2
+       body[j,4]<- body[j,6]/2 + body[j,7]/2 + body[j,8]/2
+    }
+  }
+  sep<- sapply( 1:length(sys_gp[[i]]), function(x){ sum( as.character(all_anno_sumt[,3]) %in% sys_gp[[i]][1:x] ) })
+  plot_data<- apply( body[, 1:4], 1, function(x){ x/sum(x)*100})
+  ind<-  tp %in% paste('limb-',c(1:6,32:33), sep='')  # adjust for CS12 limb
+  if(sum(ind)>0) plot_data[ ,ind ]<- matrix( rep(c(0,0,100,0), sum(ind)), nc= sum(ind) )
+  bar<-barplot( plot_data, xlab='', ylab='Sample source of cells (%)' , col=bd_col, border=NA, names.arg=rep('',length(tp)) )
+  abline(v=0)
+  for(j in 1:length(sep)) abline( v=bar[sep[j]]+ (bar[2]-bar[1])/2 )
+}
+leg_pos<-seq(bar[10],bar[50],length.out=4) 
+for(i in 1:4) legend( leg_pos[i], par('usr')[3]-1, pch=15, col=bd_col[i], legend=c('head','trunk','limb','viscera')[i], bty='n',xpd=NA, cex=1.5)
+#dev.off()
+```
+
+
+### Fig. 6: Calculate DEGs for each cluster
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+load('../result/ficlu2022/c313_mn_fr.rdata') # mean expression for each cell type
+heart_batch<- get_id(scan('/Volumes/baolab/xuy/human/batch/heart_paper_batch.txt',what=character(0))) # gene involved in batch effect to be removed
+in_gene<- setdiff( rownames(c313_mn), c(heart_batch,get_id('XIST'))) # not remove 'cc_gene'
+frac_cut<- .25
+length(c313_in_gene<- in_gene[ apply( (c313_mn[in_gene,]>=0.5&c313_fr[in_gene,]>=frac_cut),1,sum )>0 ])
+
+# DEGs
+low_cut<-0.3
+mb_cut<- ncol(c313_mn)*.2
+length(c313_deg2<- c313_in_gene[ apply(c313_mn[c313_in_gene,]<low_cut, 1, sum)>= mb_cut ])
+c313_ds2b_type<- lapply( c313_deg2, function(x){
+  d<- c313_mn[x,]
+  zs<- (d - mean(d[d<.5]))/sd(d[d<.5])
+  #zs<- (d - mean(d))/sd(d)
+  return(colnames(c313_mn)[c313_mn[x,]>=0.5 & c313_fr[x,]>=frac_cut & zs>=7])
+})
+names(c313_ds2b_type)<- c313_deg2
+length( c313_deg2b<- c313_deg2[ sapply(c313_ds2b_type,length)>0 ])
+rb_gene<- read.table('../../cross_embryo/code/rb_gene81.txt',sep='\t',as.is=T)[,1]
+sum(c313_deg2b %in% rb_gene) # 0
+# DEGs by type
+c313_type_deg<-tapply( rep(names(c313_ds2b_type),sapply(c313_ds2b_type,length)), unlist(c313_ds2b_type), function(x){x} )
+sum(sapply(c313_type_deg,length)==0) # [1] 0
+head(sort(sapply(c313_type_deg,length)))
+c313_type_deg<- c313_type_deg[colnames(c313_mn)]
+
+# sort DEGs in each type by z-score
+c313_zs<- t(apply( c313_mn,1, function(x){
+  if(sum(x>0)==0) return( rep(0,length(x)) )
+  else return((x-mean(x))/sd(x))
+}))
+colnames(c313_zs)<- colnames(c313_mn)
+g_top_tp<- apply( c313_zs, 1, function(x){ colnames(c313_zs)[which.max(x)] })
+type_deg_od<- sapply( names(c313_type_deg), function(x){ 
+  zs<- c313_zs[ c313_type_deg[[x]], x]
+  g<- c313_type_deg[[x]][ order(zs, decreasing=T) ]
+  res<- g # all DEGs
+  return(res)
+})
+
+# Remove genes involved in lysis background
+# remove erythroid, CM and liver DEGs in other types: 1) is a DEG of this type; 2) highest z-score in this type; 3) mean > 2 in this type
+lysis_tp<- list( c('endoderm-5','endoderm-6','brain-27'), 'blood-5', c('heart-3','heart-8','heart-1','heart-6','heart-9','heart-4','heart-11') )
+lysis_topg<- lapply( lysis_tp, function(x, cut_mn=2){
+  res<-lapply( x, function(y){
+    g<- type_deg_od[[y]]
+    con<- g[g_top_tp[g] %in% y & c313_mn[g,y]>=cut_mn ]
+    return(con)    
+  })
+  res<- unique(unlist(res))
+  return(res)
+})
+length(unique(unlist(lysis_topg)))
+for(i in 1:3){
+  for(j in 1:length(type_deg_od)){
+    if( names(type_deg_od)[j] %in% lysis_tp[[i]] ) next
+    type_deg_od[[j]]<-setdiff( type_deg_od[[j]], lysis_topg[[i]] )
+  }
+}
+# make up DEGs in erythroid from 'heart_batch'
+ery_high<-intersect(heart_batch[grep('^HB', ge2an[heart_batch])],rownames(c313_mn))[c313_mn[ intersect(heart_batch[grep('^HB', ge2an[heart_batch])],rownames(c313_mn)),'blood-5']>100] #           "HBZ"          "HBA2"          "HBG2"          "HBA1"          "HBE1"          "HBG1" 
+ery_high<- ery_high[ order(-c313_mn[ery_high,'blood-5']) ]
+type_deg_od[['blood-5']]<- c(ery_high, type_deg_od[['blood-5']])
+type_deg_od<- type_deg_od[all_anno_sumt[,1]]
+
+#save(type_deg_od, tf291, file='../result/ficlu2022/c313_deg.rdata')
+# output lysis genes
+names(lysis_topg)<- c('liver','erythroid','CM')
+#save(lysis_topg, file='lysis_topg.rdata') # lysis genes from top DEGs of 3 types
+# output DEGs sort by z-score
+sum(names(type_deg_od)== all_anno_sumt[,1]) # [1] 313
+deg_out<- sapply( names(type_deg_od), function(x){
+  res<- paste( paste(all_anno_sumt[x,c(2,3,5)],collapse='\t'), paste(ge2an[type_deg_od[[x]]],collapse='\t'), sep='\t')
+  return(res)
+})
+#file.create("../result/ficlu2022/deg_out.txt")
+#for(i in 1:length(deg_out)) write( deg_out[[i]], file="../result/ficlu2022/deg_out.txt", append=T) # ==> Table S1D
+length(unique(unlist(type_deg_od))) # [1] 3698
+
+
+# DEG number in each system
+plot_data<- tapply( type_deg_od, all_anno_sumt[names(type_deg_od),3], function(x){ sapply(x,length) })[names(col.block)]
+#pdf('../result/ficlu2022/deg_num_by_sys.pdf', height=4)
+par(cex=2,las=1,mar=c(2,4,1,1),lwd=3,pch=16)
+boxplot( plot_data, col=col.block, main='', xlab='', ylab='Number of DEGs',frame=F , xaxt='n', cex=.5, lwd=2)
+#dev.off()
+length(unique(unlist(type_deg_od))) # [1] 3698, add erythroid genes
+```
+
+### Fig.6: signaling centers
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+sig_cen<- c('brain-6','brain-12','brain-10','brain-25','neural progenitor-8','neural progenitor-38','neural progenitor-39','epidermis-8','limb-13')
+sum( allc_anno[,4] %in% c(all_anno_sumt[sig_cen,4], 'CS12 domain z', 'CS15 domain z') )/ nrow(allc_anno) # [1] 0.01776493, number of cells in signaling centers
+
+# search ligands from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7261168/
+dim(sigp<- read.table( '../../signaling/Cabello-Aguilar2020/LRdb_enID_by_ge2an.txt', sep='\t',as.is=T, header=T)) # 3190  2
+length(sigl_3k<- unique(as.character(sigp[,1]))) # 791
+# only take genes with mouse 1-on-1 ortholog, remove genes that not in mouse dataset
+orth11<-read.table('../../evo-devo/human2mouse/mm_hs_orth_en103_1on1.txt', sep='\t',as.is=T)
+length( sig_nv_3k <-intersect( unique(unlist(type_deg_od[sig_cen])) , intersect( setdiff(sigl_3k, get_id('CCN2')),orth11[,3]) ) ) # 33
+sig_nvl_3k <- lapply( sig_cen, function(x){ intersect(type_deg_od[[x]], intersect(setdiff(sigl_3k,get_id('CCN2')),orth11[,3]) ) }) # a list
+# heatmap
+plot_mx<-c313_mn[sig_nv_3k,sig_cen]
+plot_mx[plot_mx>2]<-2
+#pdf(paste('../result/ficlu2022/signv_3k_heatmap.pdf',sep=''),width=7,height=7)
+tmp<-heatmap3( plot_mx,labRow=ge2an[rownames(plot_mx)],scale='none',dendrogram='none',trace='none',Rowv=T,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='cor',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=1,cexCol=1,labCol_pos=c(3), labCol_las=2 )
+#dev.off()
+nv_od_3k<- rownames(plot_mx)[tmp$rowInd]
+nv_od_3k<- c( sig_kn, rev(setdiff( nv_od_3k, sig_kn)))
+plot_mx<-c313_mn[nv_od_3k,sig_cen]
+plot_mx[plot_mx>2]<-2
+#pdf(paste('../result/ficlu2022/signv_od_3k_heatmap.pdf',sep=''),width=4.5,height=7)
+heatmap3( plot_mx,labRow=ge2an[rownames(plot_mx)],scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='norm UMIs',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=1,cexCol=1.2,labCol_pos=c(3), labCol_las=2 , rowsep=length(sig_kn), labCol=sig_cen_nm )
+#dev.off()
+
+# divide into two groups
+sig_kn_nv_3k<- lapply( sig_nvl_3k, function(x){ list( x[x %in% sig_kn], x[!x %in% sig_kn ]) })
+sig_kn_nv_3k[[3]][[1]]<- setdiff( sig_kn_nv_3k[[3]][[1]], get_id('WNT5A') ) # WNT5A is a marker for diencephalon, not ZLI
+sapply(sig_kn_nv_3k, function(x){ sapply(x,length) }) # [2,]    3    2    2   10   11    5    7    4    3
+# check their expression in mouse
+load('../../mm2hs/code/sig_cen_sigl_mm_3k.rdata') # from ../../mm2hs/code/linnarsson.r, mouse data
+dim(sigl_mm_3k) #[1] 639   9, all ligands with 1-on-1 orthologs
+sig_exp_mm_3k <-mapply( function(x, y, cut_mn=.5){
+  res<-lapply(x, function(z){
+    hit<-sapply(z, function(g){
+      if(! g %in% rownames(sigl_mm_3k) ) return(-1) # no ortholog
+      else return( ifelse(y[ rownames(sigl_mm_3k) %in% g ]>=cut_mn,1,0) )
+    })
+    names(hit)<-z
+    return(hit)
+  })
+  return(res)
+}, x=sig_kn_nv_3k, y=split(t(sigl_mm_3k),1:9), SIMPLIFY=F )
+sum(sapply(sig_exp_mm_3k, function(x){ sapply(x,function(y){sum(y==1)}) })[2,])/sum(sapply(sig_kn_nv_3k, function(x){ sapply(x,length) })[2,]) # half of them are detected in mouse, 57%
+# barplot for consistency in mouse
+plot_mx<- lapply( sig_exp_mm_3k, function(x){
+  res<-sapply( x, function(y){
+    res<-rep(0,3)
+    names(res)<-c('-1','0','1')
+    for(i in 1:3) res[i]<- sum(y==as.numeric(names(res)[i]))
+    return(res)
+  })
+  res<- cbind( c(res[,1],0,0,0), c(0,0,0, res[,2]) )
+  return(res)
+})
+plot_mx<- do.call( cbind, plot_mx)
+#pdf('../result/ficlu2022/sig_cen_exp_in_mm_3k.pdf', height=4)
+par(cex=2,las=1,mar=c(2,4,1,1),lwd=3,pch=16)
+bar<- barplot( plot_mx, col=col6[c(1,16,2,1,16,2)], main='', xlab='', ylab='Number of genes', xaxt='n', lwd=2, border=NA, space=rep(c(.7,.1),9) )
+barplot( plot_mx, col=c(rep('black',3),col6[c(1,16,2)]), lwd=2, border=NA, space=rep(c(.7,.1),9), add=T, density=c(10,10,10,-1,-1,-1) )
+legend( 'topright',  col=col6[c(2,16)], pch=15, legend=c('expressed in mouse','not expressed in mouse'), bty='n', cex=.5)
+legend( 'topleft',  legend=c('known','additional'), bty='n', cex=.5, density=c(20, -1), border=NA)
+text( tapply(bar,rep(1:9,each=2), mean), -1, xpd=NA, label=sig_cen_nm, cex=.5)
+#dev.off()
+# consistent in canonical/noncanonical markers
+sum( plot_mx[3, seq(1,18,2)]) /sum(plot_mx[1:3, seq(1,18,2)]) # canonical markers, only 1 not consistent, 94%
+sum( plot_mx[6, seq(2,18,2)]) /sum(plot_mx[4:6, seq(2,18,2)]) # noncanonical markers, 57% consistent
+# a mask for consistent genes
+#pdf('../result/ficlu2022/sig_cen_exp_in_mm_3k_mask.pdf', width=3.43,height=5.93)
+par(cex=2,las=1,mar=c(0,0,0,0),lwd=3,pch=16)
+plot( 0,0, col=NA,xaxt='n',yaxt='n',frame=F,main='',xlim=c(0,9), ylim=c(0,length(nv_od_3k) ) )
+for(i in 1:length(sig_exp_mm_3k)){
+  for(j in 1:length(sig_exp_mm_3k[[i]][[2]])){  # novel
+    if(sig_exp_mm_3k[[i]][[2]][j]==1) text( i, which( rev(nv_od_3k) == names(sig_exp_mm_3k[[i]][[2]])[j] ), cex=1.5, label='*', xpd=NA)
+  }
+  for(j in 1:length(sig_exp_mm_3k[[i]][[1]])){  # also for known
+    if(sig_exp_mm_3k[[i]][[1]][j]==1) text( i, which( rev(nv_od_3k) == names(sig_exp_mm_3k[[i]][[1]])[j] ), cex=1.5, label='*', xpd=NA)
+  }
+}
+#dev.off()
+```
+
+### Fig 2: features of head mesoderm
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+source('../../cross_embryo/code/bubble_plot.r')
+hmud <- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='head mesoderm'][c(6,8:11)]
+hmud_deg2<- get_id(c('CYP26C1','CYP26A1','SPX','NTRK2','EBF2','CA3','TBX1','MECOM','POSTN','SPRY1','CYP1B1','TNC','COL12A1','FOXF2','LAMA1','DPT','SHISA2','CNMD','MPPED2','TGFB2','FOXL2','FST','COL26A1','SNAI1','HAPLN1','SPARCL1','FILIP1L','COL25A1','ST6GAL2','SIX2','BMPER','SULF1'))
+plot_mk_mn<- c313_mn[hmud_deg2,hmud]
+plot_mk_fr<- c313_fr[hmud_deg2,hmud]
+colnames(plot_mk_mn) <- all_anno_sumt[hmud,5]  -> colnames(plot_mk_fr)
+my_bubble( exp_mx=plot_mk_mn, fr_mx=plot_mk_fr, file_name='../result/ficlu2022/head_meso_undefined2.pdf', ht=8, wd=3.5, col_lab_srt=90, is_legend=T, mar_val=c(4,6,8,1),lab_down=100, is_pdf=F)
+
+# stage distribution in these types
+#pdf('../result/ficlu2022/head_meso_undefined_stage.pdf',width=4,height=6)
+par(las=1,mar=c(4,4,1,1),lwd=2,pch=16 , cex=2)
+  plot_data<- apply( clu_embst[ hmud, ], 1, function(x){ x/sum(x)*100})
+  bar<-barplot( plot_data, xlab='', ylab='Fraction of stage (%)' , col=col6[c(10,2,3)], border=NA, names.arg=rep('',length(hmud)) )
+leg_pos<-seq(0,bar[4],length.out=3) 
+#for(i in 1:3) legend( leg_pos[i], par('usr')[4]+20, pch=15, col=col6[c(10,2,3)][i], legend=c('CS12','CS13-14','CS15-16')[i], bty='n',xpd=NA, cex=0.8)
+text( bar+.5, -5, all_anno_sumt[hmud,5], pos=2, srt=45, xpd=NA, cex=.6)
+dev.off()
+pdf('../result/ficlu2022/head_meso_undefined_stage_leg.pdf',width=4,height=6)
+par(las=1,mar=c(0,0,0,0),lwd=2,pch=16 , cex=2)
+plot.new()
+legend('topleft', pch=15, col=rev(col6[c(10,2,3)]), legend=rev(c('CS12','CS13-14','CS15-16')), bty='n',xpd=NA)
+#dev.off()
+bd_col2<- col6[c(3,3,3,3,3,7,11,11,5,5,10,2,2,2,2,6,6,6,5)][c(1,12,7,16,6,10,10,11)]
+names(bd_col2)<- c('h','t','l','v','ht','lv','vl','tv')
+#pdf('../result/ficlu2022/head_meso_undefined_body.pdf',height=5)
+par(las=1,mar=c(4,4,1,4),lwd=2,pch=16 , cex=2)
+  plot_data<- apply( t(clu_body)[ hmud, ], 1, function(x){ x/sum(x)*100})
+  bar<-barplot( plot_data, xlab='', ylab='Fraction of stage (%)' , col=bd_col2[rownames(clu_body)], border=NA, names.arg=rep('',length(hmud)) )
+legend( bar[5]+.5,80, pch=15, col=bd_col2, legend=names(bd_col2), bty='n',xpd=NA, cex=0.8)
+#dev.off()
+```
+
+### Fig.1E: construct hierarchy (tree) of cell types
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+load('../result/ficlu2022/c313_f1_mn.rdata')
+dim(f1_mn) # [1] 32351    96
+# plot selected genes
+f1_mk2<- get_id(scan('../result/ficlu2022/f1_mk.txt',what=character(0))) # f1_mk.txt: manual picked markers
+sum(duplicated(f1_mk2)) #0
+rm_tp<- c("GABAergic neuron precursor",'MPC')
+plot_mk_mn<- t(f1_mn[f1_mk2, setdiff(colnames(f1_mn),rm_tp) ])
+plot_mk_fr<- t(f1_fr[f1_mk2, setdiff(colnames(f1_fr),rm_tp) ])
+tp_od<- rownames(plot_mk_mn)
+tp_od[15:16]<- tp_od[16:15]
+plot_mk_mn<- plot_mk_mn[tp_od,] # change order
+plot_mk_fr<- plot_mk_fr[tp_od,] # change order
+# change some label
+f1_lab_chg<-c("roof plate.hindbrain","progenitor.hindbrain","floor plate.hindbrain","progenitor.spinal cord","neuron.hindbrain","lung proximal epithelium/trachea")
+names(f1_lab_chg)<-c("roof plate.rhombomere","neural progenitor.rhombomere","floor plate.rhombomere","neural progenitor.spinal cord","neuron.rhombomere",'lung proximal epithelium and trachea')
+for(i in 1:length(f1_lab_chg)) rownames(plot_mk_mn)[which(rownames(plot_mk_mn)==names(f1_lab_chg)[i])]<-f1_lab_chg[i] ->rownames(plot_mk_fr)[which(rownames(plot_mk_mn)==names(f1_lab_chg)[i])]
+# vary color in different system
+head(f1_sys)
+source('bubble_plot2.r')
+vary_bubble( exp_mx=plot_mk_mn, fr_mx=plot_mk_fr, file_name='../result/ficlu2022/f1_mk3.pdf', ht=18, wd=12, col_lab_srt=90, is_legend=F, mar_val=c(1,11,2,0),lab_down=100, cexCol=.3, cexRow=.3, gene_row=F, labCol_up=-0.02, bottom_lab=F, cnm_off=.9, block_col=col.block[f1_sys[tp_od]],is_pdf=F )
+f1_out<- round(plot_mk_fr, digit=2)
+colnames(f1_out)<- ge2an[colnames(f1_out)]
+#write.table( f1_out, file='../result/ficlu2022/f1_data.txt', quote=F, sep='\t') # fraction
+```
+
+
+### Fig. S4: Umap with stage, body, and cell cycle, UMIs
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# system: system_on_umap.pdf
+# stage: stage_on_umap.pdf
+# body: body4_on_umap.pdf
+# cell cycle: cellcycle_on_umap.pdf
+# umi: umi_on_umap.pdf
+tf_umap_bd<- sapply( rownames(tf_umap2), get_bd)
+plot_ind<- rownames(tf_umap2)[sample.int(dim(tf_umap2)[1])]
+plot_ind<- plot_ind[ tf_umap_bd[plot_ind] %in% c('h','t','l','v')]
+#pdf(paste('../result/ficlu2022/body4_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3)
+plot(0,0,pch=16,xlab='',ylab='',frame=F,col='white',cex=0.2,main='', xlim=range(tf_umap2[,1]), ylim=range(tf_umap2[,2]), xaxt='n',yaxt='n')
+points(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2], col=bd_col[tf_umap_bd[plot_ind]], cex=.2, pch=16)
+legend( 'topleft', pch=16, col=bd_col, legend=c('head','trunk','limb','viscera'), bty='n',xpd=NA, cex=.5)
+#dev.off()
+# cell cycle
+cc_col<- col6[c(6,2,25)]
+names(cc_col)<- c('G1','G2M','S')
+tf_umap_cc<- allc_cc[rownames(tf_umap2),3]
+names(tf_umap_cc)<- rownames(tf_umap2)
+plot_ind<- rownames(tf_umap2)[sample.int(dim(tf_umap2)[1])]
+#pdf(paste('../result/ficlu2022/cellcycle_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3)
+plot(0,0,pch=16,xlab='',ylab='',frame=F,col='white',cex=0.1,main='', xlim=range(tf_umap2[,1]), ylim=range(tf_umap2[,2]),xaxt='n',yaxt='n')
+points(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2], col=cc_col[tf_umap_cc[plot_ind]], cex=.1, pch=16)
+legend( 'topleft', pch=16, col=cc_col, legend=names(cc_col), bty='n',xpd=NA, cex=0.5)
+#dev.off()
+# total UMIs
+data<- umi_tot[rownames(tf_umap2)]
+data[data<2000]<-2000
+data[data>18000]<-18000
+ind<- sample.int(dim(tf_umap2)[1])
+#pdf(paste('../result/ficlu2022/umi_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(4,1,1,4),lwd=3)
+tmp<-scatter_fill2(tf_umap2[ind,1],tf_umap2[ind,2],data[rownames(tf_umap2)[ind]],nlevels=999,title='Total UMIs',xlab='',ylab='',pch=16,plot_cex1=.1,plot_cex2=.1,frame=F,is_0f=T, col=-1 )
+#dev.off()
+
+# technical repeats on Umap
+plot_ind<- rownames(tf_umap2)[sample.int(dim(tf_umap2)[1])]
+#pdf(paste('../result/ficlu2022/repeat_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3)
+plot(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2],pch=16,xlab='',ylab='',frame=F,col=col6[1],cex=0.1,main='',xaxt='n',yaxt='n')
+plot_ind<- sample(rownames(tf_umap2)[sapply( rownames(tf_umap2), get_sam) %in% c('h9a','h9b')])
+points(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2], col=col6[c(2,7)][as.factor(sapply(plot_ind, get_sam))], cex=.2, pch=16)
+legend( 'topleft', col=col6[c(2,7,1)], legend=c('Emb.06 head rep1','Emb.06 head rep2','others'), bty='n', cex=0.5, pch=16)
+#dev.off()
+# embryo on Umap
+emb_col<-col6[c(2,10,5,7,6,8,4)]
+names(emb_col)<- c('7','0', '21','22','5','9','6')
+length(l0_lm<- rownames(allc_anno)[allc_anno[,3]=='limb'])
+length(l0_lm<- l0_lm[sapply(l0_lm, get_emb)=='0'])
+#pdf(paste('../result/ficlu2022/embryo_on_umap.pdf',sep=''),width=12,height=12)
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3)
+plot(tf_umap2[l0_lm,1],tf_umap2[l0_lm,2],pch=16,xlab='',ylab='',frame=F,col=emb_col['0'],cex=0.1,main='',xaxt='n',yaxt='n', xlim=range(tf_umap2[,1]),ylim=range(tf_umap2[,2]))
+plot_ind<- rownames(tf_umap2)[sample.int(dim(tf_umap2)[1])]
+plot_ind<- setdiff(plot_ind, l0_lm)
+points(tf_umap2[plot_ind,1],tf_umap2[plot_ind,2],col=emb_col[sapply(plot_ind,get_emb)], cex=.1,pch=16)
+legend( 'topleft', col=emb_col, legend=paste('Emb.0',1:7,sep=''), bty='n', cex=0.5, pch=16)
+#dev.off()
+```
+### Fig. S2: compare TF-clustering and HVG-clustering
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+
+# r1 index under HVGs. From node LILAC
+# load('../result/filter2022/clustering/hvgBysam500_mg2_noNao1_tfLcc_hvgLcc_bytotalhvg2k/hvgBysam500_mg2_noNao1_tfLcc_hvgLcc_bytotalhvg2k_clu_res.rdata') # use this result: HVGs from seurat 2k of all cells - heart_batch - cell_cycle
+length(hvg<-scan('../result/filter2022/clustering/hvgBysam500_mg2_noNao1_tfLcc_hvgLcc_bytotalhvg2k/hvgBysam500_mg2_noNao1_tfLcc_hvgLcc_bytotalhvg2k_hvg.txt',what=character(0))) # 1928
+sum(tf291 %in% hvg) # 288
+tf<-scan('../../Imai_table/humanTF_GO0003700_clear.txt',what=character(0))
+sum(tf %in% hvg) # 288, check
+
+# bubble plot marker genes of system
+# load(file='../result/ficlu2022/tf_hvg_r1_mn_totalhvg2k.rdata')
+plot_gene<- c(unlist(r1_mk2))
+plot_gene<-setdiff(plot_gene,get_id(c('PAX8','GATA5')))
+plot_gene[2]<-get_id('EMX2')
+plot_gene<-c(append(plot_gene, get_id(c('IRX3')), after=which(plot_gene==get_id('WT1'))), get_id(c('HNF4A')))
+tmp<- read.table('../../cross_embryo/code/r1_sys2.txt',sep='\t',as.is=T, header=T)
+r1_nm<- c( unique(tmp[,6])[c(1:4,6:10)], 'somatic LPM','limb','splanchnic LPM', unique(tmp[,6])[13:15],'endoderm (FOXA2+)')
+lv_mn<- apply( c313_mn[,c('endoderm-6','endoderm-5')], 1, mean)
+lv_fr<- apply( c313_fr[,c('endoderm-6','endoderm-5')], 1, mean)
+plot_mk_mn<- cbind( tf_r1_mn[ plot_gene, ], lv_mn[plot_gene]) # separate liver and non-liver endoderm
+plot_mk_fr<- cbind( tf_r1_fr[ plot_gene, ], lv_fr[plot_gene])
+colnames(plot_mk_mn)<- paste(c(1:16,16),c(r1_nm,'endoderm (hepatocyte)'))  ->colnames(plot_mk_fr)
+plot_boxb<-c(1, c(1,3,7,8,9, 11,13, 14, 15, 17, 21, 25, 29, 31, 33, 34)+1) # from bottom to top and from right to left!
+plot_boxt<-c(1, c(2,6,7,8,10,12,13, 14, 20, 20, 24, 28, 30, 32, 35, 37)+1)
+my_bubble( exp_mx=plot_mk_mn, fr_mx=plot_mk_fr, file_name='../result/ficlu2022/hvg/tf_r1_mk2.pdf', ht=9, wd=5, col_lab_srt=90, is_legend=F, mar_val=c(0,4.5,7.5,0.5),lab_down=100, cexCol=.8, cexRow=.8, gene_row=T, labCol_up=-0.02, bottom_lab=F, cnm_off=0.3, fr_fac=3.5, boxb=plot_boxb, boxt=plot_boxt, is_pdf=F)
+plot_mk_mn<- hvg_r1_mn[ plot_gene, ]
+plot_mk_fr<- hvg_r1_fr[ plot_gene, ]
+my_bubble( exp_mx=plot_mk_mn, fr_mx=plot_mk_fr, file_name='../result/ficlu2022/hvg/hvg_r1_mk2.pdf', ht=9, wd=5, col_lab_srt=0, is_legend=F, mar_val=c(0,4.5,7.5,0.5),lab_down=100, cexCol=.8, cexRow=.8, gene_row=T, labCol_up=-0.02, bottom_lab=F, cnm_off=0.6, fr_fac=3.5, is_pdf=F)
+
+# The different distribution of markers between TF-cluster and hvg-cluster
+r1_mk_diff<-sapply( plot_gene, function(x){
+  ks.test( tf_r1_mn[x,]/max(tf_r1_mn[x,]), hvg_r1_mn[x,]/max(hvg_r1_mn[x,]) )$p.value
+})
+names(r1_mk_diff)<- ge2an[plot_gene]
+names(r1_mk_diff)[r1_mk_diff< 0.05]
+# plot p value
+wsig<- which(rev(r1_mk_diff)<0.05)
+#pdf('../result/ficlu2022/hvg/hvg_r1_mk_KS_pv.pdf',width=1.5,height=9)
+par(las=1,mar=c(4,.5,1,1.5),lwd=2,pch=16)
+bar<-barplot( rev(-log10(r1_mk_diff)), horiz=T, names.arg=rev(ge2an[names(r1_mk_diff)]))
+text( 2,-5, label='-log10(pv)',xpd=NA)
+lines( -log10(c(0.05,0.05)), c(-1,50), col='red')
+text( -log10(0.05), -.5, label='p=0.05', col='red', xpd=NA, pos=4)
+text( rev(-log10(r1_mk_diff))[wsig]+0.3, bar[wsig,1], label=rep('*',2), col='red', xpd=NA, cex=2)
+#dev.off()
+
+# cluster overlap comparison between TF- and HVG-clustering
+comc<- intersect(  unlist(tf_r1) , unlist(hvg_r1) )
+# exclude liver from endoderm and see what are these cells in HVG-cluster
+tf_r1_endo<- tf_r1
+length(tf_r1_endo[['endo']]<- setdiff( tf_r1_endo[['endo']], rownames(allc_anno)[allc_anno[,1] %in% c("endoderm-5" ,"endoderm-6")] ))
+tf_r1_endo<- c( tf_r1_endo, list(rownames(allc_anno)[allc_anno[,1] %in% c("endoderm-5" ,"endoderm-6")]) )
+names(tf_r1_endo)<- c(r1_nm, 'endoderm (hepatocyte)')
+tf_in_hvg2<- sapply( tf_r1_endo, function(x){
+  res<- sapply( hvg_r1, function(y){
+    sum(x %in% y)
+  })/sum(x %in% comc)
+})
+plot_mx<- t(tf_in_hvg2)
+#plot_mx[plot_mx< 0.1 ]<- 0
+plot_mx[plot_mx> 0.8 ]<- 0.8
+plot_lab<-rownames(plot_mx)
+#pdf(paste('../result/ficlu2022/hvg/','tf_in_hvg2','.pdf',sep=''),height=7)
+tmp<-heatmap3( plot_mx,labCol=1:ncol(plot_mx),scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("white","red"))(499),color_key_label='Cells % in HVG clusters',color_key_label_cex=.8,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow=plot_lab,labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=1 ,labCol_pos=3, key_axis_num =c(0,'',40,'','>80'), lwid=c(1.5,5) )
+#dev.off()
+
+
+# stage distribution in mesoderm
+hvg_embst<- t(sapply( hvg_r1, function(x){ table(sapply(x, get_embst)) }))
+tf_embst <- t(sapply( tf_r1, function(x){ table(sapply(x, get_embst)) }))
+plot_ind<- c(7,8,9,10:12)
+#pdf('../result/ficlu2022/hvg/hvg_stage_bad.pdf',height=4,width=5)
+#par(cex=2,las=1,mar=c(2.5,4,.5,1),lwd=3,pch=16)
+bar<-barplot( apply(hvg_embst[ plot_ind ,],1,function(x){x*100/sum(x)}) , names.arg=rep('',length(plot_ind)), ylab='Stage of cells (%)', col=col6[c(10,2,3)], border=NA)
+text (bar, par('usr')[1]-(par('usr')[2]-par('usr')[1])/2, xpd=NA, label=plot_ind, cex=.5 )
+#dev.off()
+plot_ind<- c(7,8,9,10:12)
+plot_lab<- rownames(tf_embst)[plot_ind]
+plot_lab<-c('head meso.','somite','IM','somatic LPM','limb','splanchnic LPM')
+#pdf('../result/ficlu2022/hvg/hvg_stage_bad_ctrl.pdf',height=4,width=5)
+#par(cex=2,las=1,mar=c(2.5,4,.5,1),lwd=3,pch=16)
+bar<-barplot( apply(tf_embst[plot_ind,],1,function(x){x*100/sum(x)}) , names.arg=rep('',length(plot_ind)), ylab='Stage of cells (%)', col=col6[c(10,2,3)], border=NA)
+text( bar+.5, par('usr')[1]-(par('usr')[2]-par('usr')[1])/6, xpd=NA, label=plot_lab, srt=50,cex=.5, pos=2 )
+legend( -3.8, -5, col=col6[c(10,2,3)], pch=15, xpd=NA, legend=c('CS12','CS13-14','CS15-16'), cex=.5, bty='n')
+#dev.off()
+```

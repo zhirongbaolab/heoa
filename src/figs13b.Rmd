@@ -1,0 +1,67 @@
+---
+title: "Fig. 5 supple. B"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Stage alignment between mouse and zebrafish/frog
+
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# correlate stages between MM-DR and MM-XT
+load('borov.rdata')
+dm_orth <- hs_orth2[ (!hs_orth2[,7]%in%'') & (!hs_orth2[,5]%in%''), c(5,6,7,8)]
+dim(dm_orth<- dm_orth[ !duplicated(apply(dm_orth,1,paste,collapse='')), ] ) # [1] 19661     4
+dm_orth<- dm_orth[ dm_orth[,1] %in% rownames(dr_all_exp) & dm_orth[,3] %in% rownames(com_exp), ]
+# 1-on-1 orth between DR and MM
+dim( dm_orth_11<- dm_orth[ dm_orth[,1] %in% names(table(dm_orth[,1]))[table(dm_orth[,1])==1] & dm_orth[,3] %in% names(table(dm_orth[,3]))[table(dm_orth[,3])==1] , ] ) # 9386  4
+dm_tf11_cor<- apply( dr_all_exp[ dm_orth_11[dm_orth_11[,3]%in%tf,1], ], 2, function(x){
+  apply( com_exp[ dm_orth_11[dm_orth_11[,3]%in%tf,3], ] , 2, function(y){ cor(x,y) } )
+})
+dm_tf11_cor_sp<- apply( dr_all_exp[ dm_orth_11[dm_orth_11[,3]%in%tf,1], ], 2, function(x){
+  apply( com_exp[ dm_orth_11[dm_orth_11[,3]%in%tf,3], ] , 2, function(y){ cor(x,y, method='spearman') } )
+})
+dm_tf11_cor2<-dm_tf11_cor_sp
+dm_tf11_cor2[14:18,]<- dm_tf11_cor[14:18,]
+plot_mx<-dm_tf11_cor2
+#pdf('../result/dm_tf11_cor.pdf',width=7,height=7)
+heatmap3( plot_mx,scale='row',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='z-score of cor',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=1,cexCol=1 ,labRow=NA, labCol=NA, RowSideColors=rep(col6[c(2:4,6)],c(2,9,4,3)), ColSideColors= rep(col6[c(2:4,6)],c(5,3,7,3)) )
+#dev.off()
+
+# dynamic time wraping
+library(dtw)
+dm_tf11_cor3<-t(apply( dm_tf11_cor2, 1, function(x){ (x-min(x))/(max(x)-min(x))  }))  # scale
+dm_dtw<-dtw(x=1-dm_tf11_cor3)
+#pdf('../result/dm_dtw_align.pdf')
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=6,pch=16)
+plot(dm_dtw$index2,18-dm_dtw$index1,frame=F,type='l',xaxt='n',yaxt='n',xlab='',ylab='', lty=1)
+#dev.off()
+
+# mouse and frog
+load('../../Tan_frog/ensembl100/code/xt_data.rdata') # XT matrix, need to use ensembl100
+xm_orth <- hs_orth2[ (!hs_orth2[,7]%in%'') & (!hs_orth2[,3]%in%''), c(3,4,7,8)]
+dim(xm_orth<- xm_orth[ !duplicated(apply(xm_orth,1,paste,collapse='')), ] ) #
+xm_orth<- xm_orth[ xm_orth[,1] %in% rownames(xt_all_exp) & xm_orth[,3] %in% rownames(com_exp), ]
+# 1-on-1 orth between XT and MM
+dim( xm_orth_11<- xm_orth[ xm_orth[,1] %in% names(table(xm_orth[,1]))[table(xm_orth[,1])==1] & xm_orth[,3] %in% names(table(xm_orth[,3]))[table(xm_orth[,3])==1] , ] ) # 11939
+xm_tf11_cor<- apply( xt_all_exp[ xm_orth_11[xm_orth_11[,3]%in%tf,1], ], 2, function(x){
+  apply( com_exp[ xm_orth_11[xm_orth_11[,3]%in%tf,3], ] , 2, function(y){ cor(x,y) } )
+})
+xm_tf11_cor_sp<- apply( xt_all_exp[ xm_orth_11[xm_orth_11[,3]%in%tf,1], ], 2, function(x){
+  apply( com_exp[ xm_orth_11[xm_orth_11[,3]%in%tf,3], ] , 2, function(y){ cor(x,y, method='spearman') } )
+})
+xm_tf11_cor2<-xm_tf11_cor_sp
+xm_tf11_cor2[14:18,]<- xm_tf11_cor[14:18,]
+plot_mx<-xm_tf11_cor2
+#pdf('../result/xm_tf11_cor.pdf',width=7,height=7)
+heatmap3( plot_mx,scale='row',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='z-score of cor',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow_pos=c(2),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=1,cexCol=1 ,labRow=NA, labCol=NA, RowSideColors=rep(col6[c(2:4,6)],c(2,9,4,3)), ColSideColors= rep(col6[c(2:4,6)],c(7,3,7,6)) )
+#dev.off()
+
+# dynamic time warping
+xm_tf11_cor3<-t(apply( xm_tf11_cor2, 1, function(x){ (x-min(x))/(max(x)-min(x))  }))  # scale
+xm_dtw<-dtw(x=1-xm_tf11_cor3)
+#pdf('../result/xm_dtw_align.pdf')
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=6,pch=16)
+plot(xm_dtw$index2,18-xm_dtw$index1,frame=F,type='l',xaxt='n',yaxt='n',xlab='',ylab='', lty=1)
+#dev.off()
+```
