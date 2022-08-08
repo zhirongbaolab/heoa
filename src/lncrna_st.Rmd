@@ -1,0 +1,127 @@
+---
+title: "Fig. 3C"
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Validate of the expression of 5 LncRNAs on spatial transcriptome (ST)
+
+### Define AP axis on section 2 of ST
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#load('20211220.rdata') # load data matrix of ST
+length(s4_neu<- rownames(rctd_wt[[2]])[ rowSums(rctd_wt[[2]][,s1c[1:88,3]]) > .8]) # select spots that are neural type
+length(s4_neu<- s4_neu[!( mx_pos2[[4]][s4_neu,1]> 5000 & mx_pos2[[4]][s4_neu,2] > -5000 )]) # remove forebrain
+tmp<- rownames(rctd_wt[[2]])[ rowSums(rctd_wt[[2]][,s1c[1:88,3]]) > .7] # add some spots by morphology
+tmp<- tmp[!( mx_pos2[[4]][tmp,1]> 5000 & mx_pos2[[4]][tmp,2] > -5000 )]
+length(tmp<- setdiff( tmp, s4_neu))
+s4_neu<- c(s4_neu, tmp)
+#pdf('../result/sam4_neu_spot.pdf')
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+i<-4
+plot( mx_pos[[i]][ rownames(mx_pos[[i]]) %in% colnames(raw_mxs[[i]]), 5], -mx_pos[[i]][ rownames(mx_pos[[i]]) %in% colnames(raw_mxs[[i]]), 4],  main='section 2', frame=F, xlab='',ylab='', cex=.3)
+points( mx_pos2[[i]][ s4_neu,1], mx_pos2[[i]][ s4_neu,2], col='red', cex=.3)
+#dev.off()
+s4_apc<-scan('s4_spot_cor_neu.txt',what=numeric(0)) # manual pick midline of neural spots
+s4_apv<- 1:length(s4_apc)
+names(s4_apv)<-s4_neu[s4_apc]
+#pdf('../result/sam4_neu_spot_ind.pdf')
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+i<-4
+plot( mx_pos[[i]][ rownames(mx_pos[[i]]) %in% colnames(raw_mxs[[i]]), 5], -mx_pos[[i]][ rownames(mx_pos[[i]]) %in% colnames(raw_mxs[[i]]), 4],  main='section 2', frame=F, xlab='',ylab='', cex=.3, col='white')
+text( mx_pos2[[i]][ s4_neu,1], mx_pos2[[i]][ s4_neu,2], label=1:length(s4_neu), cex=.1, col=ifelse(1:length(s4_neu)%in% s4_apc, 'red', 'black') )
+#dev.off()
+s4_neu_pd<- apply( mx_pos2[[4]][s4_neu, ], 1, function(x){
+  apply( mx_pos2[[4]][ s4_neu[s4_apc], ], 1, function(y){ dist(rbind(x,y)) })
+})
+s4_neu_gp<- apply( s4_neu_pd, 2, function(x){ rownames(s4_neu_pd)[which.min(x)] })
+s4_neu_val<- s4_apv[s4_neu_gp]
+names(s4_neu_val)<- names(s4_neu_gp)
+plot_val<- rep(0, ncol(norm_mxs[[4]]) )
+names(plot_val)<- colnames(norm_mxs[[4]])
+plot_val[ names(s4_neu_val)]<- s4_neu_val
+plot_mx<- rbind(plot_val, plot_val)
+rownames(plot_mx)<-c('a','b')
+# mx_pos3: position of spots on ST; norm_mxs: normalized matrix of ST
+source('../../cross_embryo/code/plot_genes_on_tsne.r') # load function of gene heatmap
+plot_genes_on_tsne(tsne=mx_pos3[[i]][setdiff(rownames(mx_pos3[[i]]),rm_spot[[4]]),], mx=plot_mx, genes='a', file_name=paste('neu_ap_axis_',sam_name[i],sep=''),path=paste('../result/',sep=''),plot_cex=.6,is_order=F ,is_pdf=F) # plot AP value on ST
+```
+
+# The expression of LncRNAs on ST
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+lnc_chg<- c("FLJ12825",  "RP11-834C11.6",   "RP11-834C11.4",  "RP11-357H14.17", "HOTAIRM1")
+names(lnc_chg)<- c("AC023794.1",  "AC023794.3",   "LINC02381",    "AC103702.2", "HOTAIRM1") # update names for 4 lncRNA
+neu_ap2<-c("ENSG00000250742","ENSG00000233429","ENSG00000249388","ENSG00000248265","ENSG00000272763") # from pseudo-axis of scRNA-seq data
+i<-4
+dim(plot_data<-norm_mxs[[i]][neu_ap2,])
+plot_min<- .5
+for(j in 1:2) plot_data[j, plot_data[j,]< plot_min]<- rep(0, sum(plot_data[j,]< plot_min) )
+plot_genes_on_tsne(tsne=mx_pos3[[i]][setdiff(rownames(mx_pos3[[i]]),rm_spot[[i]]),], mx=plot_data, genes=c('',neu_ap2), file_name=paste('neu_ap_',sam_name[i],'_b',sep=''),path=paste('../result/',sep=''),plot_cex=.6,is_order=F, title_lab= c('token',lnc_chg[ge2an[neu_ap2]]), data_max=c(99,8,6,4,2,1.5), data_min=.5, main_cex=2,is_pdf=F )
+```
+
+# Compare expression between pseudo-axis of scRNA-seq and read AP axis of ST
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# The expression of lncRNAs in scRNA-seq
+load('../../2022/result/cluster2022/neu2/neu2_norm_mx.rdata') # load scRNA-seq data of neural prognitor
+load('../../2022/TJ/mono_2022.rdata') # load Monocle pseudo time
+lnc<- c('ENSG00000250742','ENSG00000233429','ENSG00000249388','ENSG00000248265','ENSG00000272763')
+dim(lnc_exp<- norm_mx[lnc, rownames(mono[[2]]) ])
+lnc_exp<- lnc_exp[ , order( mono[[2]][,2] ) ] # only take CS13 cells to be consistent with ST stage
+dim(lnc_exp<- lnc_exp[ , sapply(colnames(lnc_exp), get_embst) %in% 'CS13' ]) # lncRNAs expression along pseudo-axis
+win<-30 # smooth
+sm_vec<- cbind( 1:ncol(lnc_exp) -win, 1:ncol(lnc_exp) +win )
+lnc_exp_sm<- t(lnc_exp)
+sm_vec[ sm_vec[,1]<1, 1]<-1
+sm_vec[ sm_vec[,2]>nrow(lnc_exp_sm), 2]<- nrow(lnc_exp_sm)
+lnc_exp_sm<- apply( lnc_exp_sm, 2, function(x){
+  apply( sm_vec, 1, function(y){ mean(x[y[1]:y[2]]) })
+})
+lnc_exp_sm<- apply( lnc_exp_sm, 2, function(x){ x/max(x) })
+```
+
+# Compare expression between pseudo-axis of scRNA-seq and read AP axis of ST
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# The expression of lncRNAs on ST
+plot_gene<- lnc
+lnc_s4_exp<- sapply( plot_gene, function(x){
+  res<- tapply( norm_mxs[[4]][x,names(s4_neu_val)], s4_neu_val, mean)
+  return(res)  
+})
+win<-5
+sm_vec<- cbind( 1:nrow(lnc_s4_exp) -win, 1:nrow(lnc_s4_exp) +win )
+lnc_s4_sm<- lnc_s4_exp
+sm_vec[ sm_vec[,1]<1, 1]<-1
+sm_vec[ sm_vec[,2]>nrow(lnc_s4_sm), 2]<- nrow(lnc_s4_sm)
+lnc_s4_sm<- apply( lnc_s4_sm, 2, function(x){
+  apply( sm_vec, 1, function(y){ mean(x[y[1]:y[2]]) })
+})
+lnc_s4_sm<- apply( lnc_s4_sm, 2, function(x){
+  apply( sm_vec, 1, function(y){ mean(x[y[1]:y[2]]) })
+})
+lnc_s4_sm<- apply( lnc_s4_sm, 2, function(x){ x/max(x) })
+
+# align two dataset with the boundary of hindbrain and spinal cord
+st_sep<- 30
+sc_sep<- 300
+sc_ind<- round( c(seq(1, sc_sep, length.out= st_sep ), seq(sc_sep, nrow(lnc_exp_sm), length.out= nrow(lnc_s4_exp)-st_sep+1 )[-1] )  )
+cor_res<-sapply( lnc, function(x){ signif( cor(lnc_exp_sm[ sc_ind ,x], lnc_s4_sm[ , x], method='pearson'), digit=2 ) }) # correlation
+sc_val<- c( seq(1,st_sep, length.out= sc_sep ), seq(st_sep+1, nrow(lnc_s4_exp), length.out=nrow(lnc_exp_sm)-sc_sep+1)[-1] )# transform axis of SC to axis of ST
+```
+
+# Plot pseudo-axis of scRNA-seq and read AP axis of ST in one figure
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+#pdf('../result/cluster2022/neu2/lncrna/sc_st_sctrans_in1.pdf', width=7,height=1.5)
+par(cex=2,las=1,mar=c(1,3,1,1),lwd=3,pch=16, mfrow=c(2,3), cex.main=1.5)
+for(x in lnc){
+  plot( sc_val, lnc_exp_sm[ ,x], main='', frame=F, xlab='', ylab='', type='l', col='grey', xaxt='n', yaxt='n' )
+  lines( 1:nrow(lnc_s4_sm), lnc_s4_sm[ , x] , col='red' )
+  axis(2, c(0,1), at=c(0,1), lwd=2)
+  text( -30, 0.5, label=c( "RP11-834C11.4", "HOTAIRM1", "RP11-834C11.6",  "FLJ12825",   "RP11-357H14.17")[lnc %in% x], xpd=NA, srt=90, cex=1.5)
+  if(x==lnc[1]){
+    text(120, 0.85, label='SC', col='grey65', xpd=NA, cex=1.5);  text(120, 0.35, label='ST', col='red', cex=1.5); 
+  }
+  arrows( 0.2*139, -0.06, 0.8*139, -0.06, xpd=NA, length=.1, lwd=2)
+  text( 139*c(0.1,0.9), rep(-.06, 2), xpd=NA, label=c('A','P'), cex=1.5)
+}
+#dev.off()
+```

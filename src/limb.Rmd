@@ -88,7 +88,7 @@ plot_digit_cs15<-function(x, path='',col_grad=c(colorRampPalette(c("white","red"
 #  dev.off()
 }
 
-do_mn<- sapply( flm3_fi, function(x){ apply( norm_mx[ c(unlist(lm_mk),hox,get_id('SOX6')), x ], 1, mean) })
+do_mn<- sapply( flm3_fi, function(x){ apply( norm_mx[ c(unlist(lm_mk),hox,get_id(c('SHOX2','SOX6'))), x ], 1, mean) })
 colnames(do_mn)<- paste(3, sapply( flm3_anno, function(x){ strsplit(x, split=' ')[[1]][3] }), sep='')
 fl3_dc2<-lapply( paste(3,c('a','b','c','d','e','f','h','i','j','m1','m2','n1','n2','pq','z','l','o1','o2','o3'),sep=''),function(x){
  res<-read.table(paste('../../cross_embryo/result/reclustering/limb/limb_pat/limb_png/cs15_do15/',x,'.csv',sep=''), sep=',',as.is=T,skip=1, row.name=1)
@@ -98,7 +98,7 @@ fl3_dc2<-lapply( paste(3,c('a','b','c','d','e','f','h','i','j','m1','m2','n1','n
 do2tj<- paste(3,c('a','b','c','d','e','f','h','i','j','m','m','n','n','pq','z','l','o','o','o'),sep='')
 names(fl3_dc2)<- paste(3,c('a','b','c','d','e','f','h','i','j','m1','m2','n1','n2','pq','z','l','o1','o2','o3'),sep='') -> names(do2tj)
 par(cex=2,las=1,mar=c(0,0,1,0),lwd=3,pch=16, mfrow=c(3,3))
-tmp<-sapply( get_id(c('EMX2','PBX1','SHH','HAND2','MSX2','LHX9','ALX4','PAX1','TBX3','RUNX2','MEOX2','SOX9','PTCH1','SCX','PTHLH')), plot_digit_cs15, path='../result/cluster2022/limb_new15/cs15/digit/', cut_min=.2,is_title=F)
+tmp<-sapply( get_id(c('EMX2','PBX1','SHH','HAND2','MSX2','LHX9','ALX4','PAX1','TBX3','RUNX2','SHOX2','SOX9','PTCH1','SCX','PTHLH')), plot_digit_cs15, path='../result/cluster2022/limb_new15/cs15/digit/', cut_min=.2,is_title=F)
 ```
 
 ```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
@@ -223,38 +223,34 @@ sum( toupper(rownames(e10_mn))!= ge2an[rownames(mk_mn2)] ) # [1] 0, check order 
 diff2<- (mk_mn2>=.5 & insitu2 ==0 & e10_mn[,colnames(mk_mn2)] < 0.2 ) | (mk_mn2<.2 & insitu2 ==2 & e10_mn[,colnames(mk_mn2)] >=.5)
 sum(diff2)
 diff2[,c('p','q')]<-F
-for(i in 1:nrow(diff2)) print( paste( ge2an[rownames(diff2)[i]], paste( colnames(diff2)[diff2[i,]], collapse=' '), sep=': '))
-my_bubble_lv3( exp_mx1=mk_mn2, fr_mx1=mk_fr2, exp_mx2=e10_mn[,colnames(mk_mn2)], fr_mx2=e10_fr[,colnames(mk_mn2)], exp_mx3=data.matrix(insitu2)/3,fr_mx3=data.matrix(insitu2)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs13_mk_insitu_mm_bubble.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(10,4,1,6),lab_down=4, boxb=diff2, ofs=.5, ofs2=.5, col3=col6[8], is_pdf=F)
+#for(i in 1:nrow(diff2)) print( paste( ge2an[rownames(diff2)[i]], paste( colnames(diff2)[diff2[i,]], collapse=' '), sep=': '))
+my_bubble_lv3( exp_mx1=mk_mn2, fr_mx1=mk_mn2, exp_mx2=e10_mn[,colnames(mk_mn2)], fr_mx2=e10_mn[,colnames(mk_mn2)], exp_mx3=data.matrix(insitu2)/3,fr_mx3=data.matrix(insitu2)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs13_mk_insitu_mm_bubble_by_exp.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=NULL, ofs=.5, ofs2=.5, col3=col6[19],is_pdf=F) # expression as size, no good than 'fraction as size'
 
 # CS15
-cs15_mk<-get_id(c('EMX2','PBX1','MSX2','SHH','HAND2','LHX9','ALX4','PAX1','TBX3','RUNX2','MEOX2','PTCH1','SOX9','SCX','PTHLH','HOXA11','HOXA13'))
+cs15_mk<-get_id(c('PAX1','RUNX2','ALX4','EMX2','PBX1','SHOX2','TBX3','MSX2','LHX9','HAND2','PTCH1','SHH','PTHLH','SOX9','SCX','HOXA11','HOXA13'))
 insitu3<- read.xlsx( '../result/cluster2022/limb_new15/cs15/insitu_ref.xlsx',sheet=1, rowNames=T, colNames=T ) # in situ
 colnames(insitu3)<- paste('3',colnames(insitu3), sep='')
 rownames(insitu3)<- get_id(rownames(insitu3))
+insitu3<- insitu3[cs15_mk,]
 mk_mn1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cs15_mk, x ], 1, mean) })
 mk_fr1<-sapply( flm3_fi, function(x){ apply( norm_mx[ cs15_mk, x ], 1, function(y){sum(y>0)/length(y)}) })
 colnames(mk_mn1)<- sapply(flm3_anno,function(x){ strsplit(x,split=' ')[[1]][3] }) -> colnames(mk_fr1)
 cs15_doo<- c("a","b","c","d","e","f","h","i","j","l","n",'m',"o","pq", "z" )
 mk_mn1<- mk_mn1[,cs15_doo]
 mk_fr1<- mk_fr1[,cs15_doo]
+cs15_mk_mm<- unname(sapply( cs15_mk, function(x){ orth11[ orth11[,3]==x, 2 ] }))
+e12_mn<-sapply( cs15_doo, function(x){ if(x=='m') return( rep(0,length(cs15_mk))) else apply( e12_mes[cs15_mk_mm,unlist(e12_fi[e12_anno==x])],1,mean) })
+e12_fr<-sapply( cs15_doo, function(x){ if(x=='m') return( rep(0,length(cs15_mk))) else apply( e12_mes[cs15_mk_mm,unlist(e12_fi[e12_anno==x])],1,function(y){sum(y>0)/length(y)}) })
+rownames(e12_mn)<- toupper(rownames(e12_mn))
+rownames(e12_fr)<- toupper(rownames(e12_fr))
 sum( toupper(rownames(e12_mn))!= ge2an[rownames(mk_mn1)] ) # [1] 0, check order of genes
-e12_mn_adj<- sapply( colnames(mk_mn1), function(x){
-  if(x %in% colnames(e12_mn)) return( e12_mn[,x] )
-  else if( x=='m') return( rep(0, 17) )
-  else if( x=='i'| x=='j') return( e12_mn[,'ij']) else print('error')
-})
-e12_fr_adj<- sapply( colnames(mk_fr1), function(x){
-  if(x %in% colnames(e12_fr)) return( e12_fr[,x] )
-  else if( x=='m') return( rep(0, 17) )
-  else if( x=='i'| x=='j') return( e12_fr[,'ij']) else print('error')
-})
 insitu3[get_id('HOXA11'),'3m']<-0 # should not marker any gene in domain 'm' as mouse in situ
 # define diff between human and mouse 1) hs > 0.5 & insitu =0 & mm <0.2 ; 2) sc < 0.2 & insitu =2 & mm > 0.5
 diff3<- (mk_mn1>=.5 & insitu3 ==0 & e12_mn_adj < 0.2 ) | (mk_mn1<.2 & insitu3 ==2 & e12_mn_adj >=.5)
 diff3[,'m']<-F # should exclude PTHLH and m
 sum(diff3) # 3
-for(i in 1:nrow(diff3)) print( paste( ge2an[rownames(diff3)[i]], paste( colnames(diff3)[diff3[i,]], collapse=' '), sep=': '))
-my_bubble_lv3( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=e12_mn_adj, fr_mx2=e12_fr_adj, exp_mx3=data.matrix(insitu3)/3,fr_mx3=data.matrix(insitu3)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs15_mk_insitu_mm_bubble.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=diff3, ofs=.5, ofs2=.5, col3=col6[8], cnm_off=.8, is_pdf=F)
+#for(i in 1:nrow(diff3)) print( paste( ge2an[rownames(diff3)[i]], paste( colnames(diff3)[diff3[i,]], collapse=' '), sep=': '))
+my_bubble_lv3( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=e12_mn, fr_mx2=e12_fr, exp_mx3=data.matrix(insitu3)/3,fr_mx3=data.matrix(insitu3)/3, file_name='../result/cluster2022/limb_new15/cmp_mm/cs15_mk_insitu_mm_bubble.pdf', ht=5, wd=9, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=numeric(0), ofs=.5, ofs2=.5, col3='black', cnm_off=.8, is_col_scale=T, is_pdf=F)
 
 # CS12
 insitu1<- read.xlsx( '../result/cluster2022/limb_new15/cs15/insitu_ref.xlsx',sheet=3, rowNames=T, colNames=T ) # in situ
@@ -267,5 +263,5 @@ mk_fr1<-sapply( flm1_fi, function(x){ apply( norm_mx[ cs12_mk, x ], 1, function(
 colnames(mk_mn1)<- sapply(flm1_fi_anno,function(x){ strsplit(x,split=' ')[[1]][3] }) -> colnames(mk_fr1)
 mk_mn1<- mk_mn1[,cs12_doo]
 mk_fr1<- mk_fr1[,cs12_doo]
-my_bubble_lv2( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=data.matrix(insitu1)/3,fr_mx2=data.matrix(insitu1)/3, file_name='../result/cluster2022/limb_wl/cs12/cs12_mk_insitu_bubble.pdf', ht=3.5, wd=5, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=NULL, ofs=.5, ofs2=.5, col2=col6[8],is_pdf=F )
+my_bubble_lv2( exp_mx1=mk_mn1, fr_mx1=mk_fr1, exp_mx2=data.matrix(insitu1)/3,fr_mx2=data.matrix(insitu1)/3, file_name='../result/cluster2022/limb_wl/cs12/cs12_mk_insitu_bubble.pdf', ht=3.5, wd=5, col_lab_srt=0, is_legend=F, mar=c(5,4,1,1),lab_down=4, boxb=NULL, ofs=.5, ofs2=.5, col2='black',is_pdf=F )
 ```
