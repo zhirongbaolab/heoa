@@ -118,15 +118,11 @@ cut_n2<- 1
 length( scg_inc <- scg[apply(clu_temp_fd[scg, ], 1, function(x){ sum(x>cut_fd2)>= cut_n2 & sum(x< -cut_fd2)>=cut_n2 })] )
 length( scg<- setdiff( scg, scg_inc ) )
 
-# divide systemically changing genes into 3 patterns: glo down, glo down with low expression at heart/endothelium/blood, glo up
+# divide systemically changing genes into 2 patterns: glo down, glo up
 col_sep<- sapply( 1:(length(unique(la_tp_sys))-1), function(x){ sum(la_tp_sys %in% unique(la_tp_sys)[1:x] ) })
 l4s<- colnames(clu_temp_fd)[ la_tp_sys %in% c('splanchnic LPM','endothelium','blood') ][-(1:4)]
-lex_ratio<- .6
-scg_pat<- list( scg[rowSums(clu_temp_fd[scg,])<0 & rowSums(clu_temp_fd[scg,l4s]==0)>=lex_ratio*length(l4s) ],
-scg[rowSums(clu_temp_fd[scg,])<0 & rowSums(clu_temp_fd[scg,l4s]==0)<lex_ratio*length(l4s) ],
-scg[rowSums(clu_temp_fd[scg,])>0] )
-sapply( scg_pat<- lapply(scg_pat, function(x){ scg_od[scg_od %in% x]}), length) # order:  80 388  78
-scg_pat<- lapply(scg_pat,function(x){ x[order(rowSums(clu_temp_fd[x,]))] } )# order by FD?
+scg_pat<- list( scg[rowSums(clu_temp_fd[scg,])<0 ],scg[rowSums(clu_temp_fd[scg,])>0] ) # [1] 468  78
+scg_pat<- lapply(scg_pat,function(x){ x[order(rowSums(clu_temp_fd[x,]))] } )# order by FD
 plot_mx<-clu_temp_fd[ unlist(scg_pat),]
 plot_mx[plot_mx>2]<-2
 plot_mx[plot_mx< -2]<- -2
@@ -135,7 +131,7 @@ row_sep<- sapply( 1:2, function(x){ length(unlist(scg_pat[1:x])) })
 tmp<-heatmap3( plot_mx,labRow=NA,labRow2=NA,scale='none',dendrogram='none',trace='none',Rowv=F,Colv=F,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("blue","white","red"))(499),color_key_label='log2 FD',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labCol='',labRow_pos=c(2,4),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=.5, ColSideColors= col.block[la_tp_sys[colnames(plot_mx)] ], colsep=col_sep, rowsep=row_sep)
 #dev.off()
 # output human SCG with group and cell type information
-scg_out<- cbind( 'stage 3', rep(c('down','down','up'), sapply(scg_pat,length)), unlist(scg_pat), ge2an[unlist(scg_pat)], rep(c(1:3), sapply(scg_pat,length)), clu_temp_fd[unlist(scg_pat),] )
+scg_out<- cbind( 'stage 3', rep(c('down','up'), sapply(scg_pat,length)), unlist(scg_pat), ge2an[unlist(scg_pat)], rep(c(1:2), sapply(scg_pat,length)), clu_temp_fd[unlist(scg_pat),] )
 scg_out<- rbind( la_tp_sys[colnames(scg_out)], scg_out)
 colnames(scg_out)[1:5]<- c('stage','up or down','ID','Symbol','Group')
 #write.table(scg_out, file=paste('../result/glo/hs_dp.txt',sep=''), sep='\t',quote=F,row.name=T)
