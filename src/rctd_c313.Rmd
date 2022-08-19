@@ -1,0 +1,583 @@
+---
+title: "Fig. 2 & supple."
+output: html_document
+header-includes:
+  - \usepackage{subcaption}
+  - \usepackage{float}
+---
+# Figures on spatial transcriptome
+
+### Deconvolution on 313 clusters
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70)}
+# preprocessing
+library(Seurat)
+library(Matrix)
+path<-'../HT2021-19134-4_Report20211220/'
+sam_name<- c('KS20211101_1','KS20211101_2','KS20211102_1','KS20211102_2')
+x<-sam_name[1]
+features<- read.table( gzfile(paste(path, x, '/outs/filtered_feature_bc_matrix/features.tsv.gz',sep='')) , sep='\t',as.is=T)
+ge2an<- features[,2]
+names(ge2an)<- features[,1]
+
+# a function to compile matrix for each sample
+read_raw<- function(x){
+raw_mx<- readMM( gzfile(paste(path, x, '/outs/filtered_feature_bc_matrix/matrix.mtx.gz',sep='') ) )
+barcode<- read.table( gzfile(paste(path, x, '/outs/filtered_feature_bc_matrix/barcodes.tsv.gz',sep='')) , sep='\t',as.is=T)
+features<- read.table( gzfile(paste(path, x, '/outs/filtered_feature_bc_matrix/features.tsv.gz',sep='')) , sep='\t',as.is=T)
+raw_mx<- data.matrix(raw_mx)
+rownames(raw_mx)<- as.character(features[,1])
+colnames(raw_mx)<- as.character(barcode[,1]) 
+return(raw_mx)
+}
+raw_mxs<- lapply( sam_name, read_raw)
+
+mx_pos<- lapply( sam_name, function(x){
+  res<- read.table( paste(path, x, '/outs/spatial/tissue_positions_list.csv',sep='') , sep=',',as.is=T, row.name=1)
+  return(res)
+})
+for(i in 1:4) print(sum(! colnames(raw_mxs[[i]]) %in% rownames(mx_pos[[i]])))
+mx_pos2<- mapply( function(x,y){ 
+  x<- x[colnames(y),]
+  res<-cbind( x[,5], -x[,4])
+  rownames(res)<- rownames(x)
+  return(res)
+}, x=mx_pos, y=raw_mxs )
+# To canonical position
+mx_pos3<- lapply( mx_pos2, function(x){
+  res<-cbind(-x[,2],x[,1])
+  rownames(res)<- rownames(x)
+  return(res)
+})
+
+# remove spots that do not have tissues by HE images
+rm_spot<- lapply( sam_name, function(x){
+  res<- read.table(paste(path, x, '/outs/blank.csv',sep=''), sep=',', header=T)
+  return( as.character(res[,1])  )
+})
+sapply(rm_spot,length)
+
+if(F){
+# Deconvolution running on node LILAC
+library(RCTD)
+library(openxlsx)
+load('../../2022/result/filter2022/clustering/hvgBysam500_mg2_noNao1_tf291_tfLcc_hvgLcc_rmEndog3/flc_raw_0421.rdata') # THIS IS RAW matrix of ALL USED CELLS!
+load('../../2022/result/ficlu2022/ficlu_20220522.rdata')
+load('../../2022/result/filter2022/allc185140_original_tot.rdata')
+length(sc_inc<- rownames(allc_anno)[! as.character(allc_anno[,3]) %in% c('limb','epithelium','fibroblast','miscellaneous')]) # filtering on cell types
+dim(ref_mx<- flc_raw[,sc_inc])
+rm(flc_raw)
+ref_tt<- umi_tot[sc_inc]
+ref_tp<- as.character(allc_anno[sc_inc,1])
+length(unique(ref_tp)) # 240
+names(ref_tp)<- sc_inc
+
+# common genes
+sum( ! rownames(ref_mx) %in% rownames(raw_mxs[[1]]) )# [1] 0, all in
+comg<- rownames(ref_mx)
+
+# make RCTD object
+rctd_ref<- Reference(ref_mx, as.factor(ref_tp) , ref_tt)
+i<-3
+#i<-4
+print(paste('i:',i))
+rctd_sp <- SpatialRNA( data.frame(mx_pos2[[i]]), raw_mxs[[i]][comg,], colSums(raw_mxs[[i]]) )
+rctd_ob <-create.RCTD( rctd_sp, rctd_ref, max_cores = 6, test_mode = F, CELL_MIN_INSTANCE = 5)
+rctd_ob <- run.RCTD(rctd_ob, doublet_mode = 'multi') # ~6 hours
+rctd_res<- rctd_ob@results
+save( rctd_res, file=paste('~/human/spatial/rctd/rctd_ref313_multi_res_',sam_name[i],'.rdata',sep='') )
+print('finish!')
+
+# nohup Rscript rctd_c313.r > rctd_c313_out.txt 2>&1 &
+}
+```
+
+### The localization of cell types. Read back result of RCTD from LILAC.
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+rctd_wt<-lapply(3:4, function(i){
+load(paste('~/human/spatial/rctd/rctd_ref313_multi_res_',sam_name[i],'.rdata',sep=''))
+res<- t(sapply(rctd_res, function(x){ res<-rep(0,length(rctd_res[[1]][[1]])); names(res)<- names(rctd_res[[1]][[1]]); res[ x$'cell_type_list' ]<- x$'sub_weights'; return(res) }))
+rownames(res)<- colnames(raw_mxs[[i]])[colSums(raw_mxs[[i]])>=100] # RCTD filter spot by 100
+res<- res[, rownames(all_anno_sumt)[rownames(all_anno_sumt) %in% colnames(res)] ]
+return(res)
+})
+
+source('../../scatter_fill2.r')
+source('../../cross_embryo/code/plot_genes_on_tsne.r')
+# get plot range to make XY not distorted
+get_nano_range<- function(x){
+  diff<- abs( ( ( max(x[,2])-min(x[,2]) ) - ( max(x[,1])-min(x[,1]) ) )/2 )
+  if( ( max(x[,2])-min(x[,2]) ) > ( max(x[,1])-min(x[,1]) ) ) res<- list( c(min(x[,1])-diff,max(x[,1])+diff), range(x[,2]) )
+  else res<- list( range(x[,1]), c(min(x[,2])-diff,max(x[,2])+diff) )
+  return(res)
+}
+st_range<- lapply( mx_pos2, get_nano_range)
+st_range3<- lapply( mx_pos3, get_nano_range)
+
+
+# proportion of each cell type
+load('../../2022/result/ficlu2022/ficlu_20220522.rdata') # meta data of cell types
+plot_tp<- rownames(all_anno_sumt)[all_anno_sumt[,1] %in% colnames(rctd_wt[[1]])] # make sure older is consistent with current 'all_anno_sumt'
+length(plot_tp<- setdiff( plot_tp, 'epidermis-8')) # remove AER
+length(plot_name<-paste( plot_tp,  all_anno_sumt[ plot_tp, 'anno2'], sep=': '))
+plot_min<- rep(0, length(plot_tp))
+plot_min[plot_tp %in% c('splanchnic LPM-13','heart-6','blood-5','endoderm-6')]<-c(.15,.15,.15,0.3)  # low boundary for some type
+for(i in 3:4){
+plot_data<-t(as.matrix(rctd_wt[[i-2]][,plot_tp]))
+for(j in 1:length(plot_min)){ if(plot_min[j]!=0) plot_data[j, plot_data[j,]<plot_min[j] ] <- 0 }
+plot_genes_on_tsne(tsne=mx_pos3[[i]][ setdiff(rownames(rctd_wt[[i-2]]), rm_spot[[i]]),], mx=plot_data, genes=plot_tp, file_name=paste('ref313_multi_conf_tp_',sam_name[i],sep=''),path=paste('../result2022/rctd/',sep=''),plot_cex=.6,is_order=F, title_lab=plot_name, xx=st_range3[[i]][[1]],yy=st_range3[[i]][[2]], main_cex=.8 , data_min=plot_min )
+}
+# see Supplementary Notes 1 & 2
+```
+
+### plot deconvolution on system level and showcase of cell types
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+library(openxlsx)
+source('../../cross_embryo/code/plot_genes_on_tsne.r')
+load('../../cross_embryo/result/reclustering3/TJ_clu/col.block.rdata')
+tmp<-unique(read.table('../../type_all_col3.txt',sep='\t',as.is=T,comment.char='')[,2])
+col6<-c('lightgrey','red',tmp[3],'purple',tmp[2],tmp[5],'blue','green4','orchid','turquoise','sienna',tmp[9],'yellow2','hotpink','navy','steelblue','skyblue','pink','black',tmp[4],rainbow(7))
+rctd_pps<- lapply( rctd_wt, function(y){
+  res<-apply( y, 1, function(x){ tapply( x, all_anno_sumt[colnames(y),3], sum) })
+  res<- t(res[ names(col.block)[names(col.block) %in% rownames(res)],] )
+  return(res)
+})
+library(scatterpie)
+for(i in 1:2){
+plot_mx<- data.frame( mx_pos2[[i+2]][rownames(rctd_pps[[i]]),], rctd_pps[[i]] )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[i+2]], ]
+#pdf(paste('../result2022/rctd/ref313_syspie_',sam_name[i],'.pdf',sep=''))
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=as.character(col.block[colnames(rctd_pps[[1]])])) 
+#dev.off()
+}
+
+# PA and SHF
+wt<-rctd_wt[[1]]
+plot_tp <- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='craniofacial'][setdiff(1:16,7:9)]
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[3]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[1+2]], ]
+#pdf(paste('../result2022/rctd/pa_s3.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=col6[c(1, 14,9,2, 17,10,7 )], labels=c(sort(unique(dp_tp))) )
+#dev.off()
+
+
+# heart in S3
+wt<-rctd_wt[[1]]
+plot_tp<-c('heart-3','heart-8','heart-1','heart-9','heart-6','heart-10','heart-7','heart-2','heart-5','endothelium-4','endothelium-10','endothelium-6')
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[3]][rownames(plot_wt),], plot_wt )
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[1+2]], ]
+colnames(plot_mx)[1:2]<- c('X','Y')
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/heart_s3.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('atria.cardiomyocyte'=col6[2], 'atrioventricular.canal'=col6[3], 'endocardial.derived.cell'=col6[4], 'endocardium'=col6[6], 'epicardial.derived.cell'=col6[7], 'epicardium'=col6[8], 'sinoatrial.node..SAN.'=col6[9], 'ventricle.cardiomyocyte'=col6[10], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+
+# early and late sclerotome
+wt<-rctd_wt[[1]]
+plot_tp<-c('somite-1','somite-3')
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[3]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[1+2]], ]
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/sclerotome_s3.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('sclerotome.early'=col6[7], 'sclerotome.late'=col6[2], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+
+# brain in S4
+wt<-rctd_wt[[2]]
+plot_tp <- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='neural progenitor'][c(1:4,6:16)]
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[4]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[2+2]], ]
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/brain_s4.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('anterior.head.fold'=col6[2], 'anteromedial.cerebral.pole..ACP.'=col6[4], 'dorsal.diencephalon'=col6[3], 'dorsal.telencephalon'=col6[6], 'mesencephalon'=col6[7], 'midhindbrain.junction..MHB.'=col6[8], 'ventral.diencephalon.and.ZLI'=col6[9], 'ventral.telencephalon'=col6[10], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+
+# all nervous system in S4
+wt<-rctd_wt[[2]]
+#write.table( all_anno_sumt[ all_anno_sumt[,3] %in% names(col.block)[1:4],], file='../result2022/rctd/cns_anno.txt',sep='\t', quote=F, col.name=F) # annotate
+# read back annotation
+cns_anno<- read.xlsx('../result2022/rctd/cns_anno2.xlsx',sheet=1, colName=F)
+rownames(cns_anno)<-cns_anno[,1]
+plot_tp <- cns_anno[ cns_anno[,6]!='rm',1]
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[plot_tp]<- cns_anno[plot_tp,6]
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[4]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[2+2]], ]
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/cns_s4.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('anterior.head.fold'=col6[5], 'anteromedial.cerebral.pole..ACP.'=col6[12], 'dorsal.diencephalon'=col6[4], 'dorsal.telencephalon'=col6[17], 'mesencephalon'=col6[2], 'midhindbrain.junction..MHB.'=col6[8], 'placode'=col6[5], 'rhombomere'=col6[10],'sensory.neuron'=col6[14], 'spinal.cord'=col6[6],'ventral.diencephalon.and.ZLI'=col6[9], 'ventral.telencephalon'=col6[7], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+
+# head mesoderm in S3
+wt<-rctd_wt[[1]]
+plot_tp <- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='head mesoderm'][c(6,8:11)] # 20 spots >=.05 in all undefined
+# plot_tp<- c(plot_tp, c('head mesoderm-5')) # include head muscle
+dp_tp<- all_anno_sumt[colnames(wt), 'anno2']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[3]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[1+2]], ]
+lab<- c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/head_mesoderm_s3.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('undefined..CYP26C1.'=col6[2], 'undefined.2'=col6[4], 'undefined.3'=col6[3], 'undefined.4'=col6[6], 'undefined.5'=col6[7], 'others'=col6[1] ),  labels=lab )
+#ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('head.muscle'=col6[12],'undefined..CYP26C1.'=col6[2], 'undefined.2'=col6[4], 'undefined.3'=col6[3], 'undefined.4'=col6[6], 'undefined.5'=col6[7], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+
+# The comparison of cell number between scRNA-seq and ST in head mesoderm
+hm_clu<- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='head mesoderm']
+hmud_clu<- rownames(all_anno_sumt)[ all_anno_sumt[,3]=='head mesoderm'][c(6,8:11)] # 20 spots >=.05 in all undefined
+get_embst<-function(x){
+  emb<-gsub("[A-z]", "", sapply(x,function(y){ strsplit(y,split='_')[[1]][1] }) )
+  if(emb=='7') res<-'CS12' else if( emb %in% c('0','21','22') ) res<-'CS13-14' else res<-'CS15-16'
+  return(res)
+}
+allc_st<- sapply( rownames(allc_anno), get_embst)
+hm_cnum<- t( sapply( hm_clu, function(x){
+c( sum( allc_anno[,1]==x ), sum( allc_anno[,1]==x &  allc_st=='CS13-14' ) )
+}) )
+# calculate spots in ST
+hm_snum<- mapply( function(x,y){
+  #colSums(x[,hm_clu]>0.05)  # count of spots with > cutoff
+  colSums(x[,hm_clu]) # sum of proportion
+}, x=rctd_wt, y=mx_pos2[3:4] )
+#pdf('../result2022/rctd/head_meso_cell_spot_num_cs13_s3.pdf', height=5, width=5)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+i<-2;j<-1
+plot( hm_cnum[,i], hm_snum[,j], main='', xlab='No. of cells (scRNA-seq)', ylab='No. of spots (ST)',frame=F)
+points( hm_cnum[hmud_clu,i], hm_snum[hmud_clu,j] ,col='red')
+#dev.off()
+#pdf('../result2022/rctd/head_meso_cell_spot_num_cs13_s4.pdf', height=5, width=5)
+par(cex=2,las=1,mar=c(4,4,1,1),lwd=3,pch=16)
+i<-2;j<-2
+plot( hm_cnum[,i], hm_snum[,j], main='', xlab='No. of cells (scRNA-seq)', ylab='No. of spots (ST)',frame=F)
+points( hm_cnum[hmud_clu,i], hm_snum[hmud_clu,j] ,col='red')
+#dev.off()
+cor.test( hm_cnum[hmud_clu,2], hm_snum[hmud_clu,1] ) # cor=0.92, p=0.02
+cor.test( hm_cnum[hmud_clu,2], hm_snum[hmud_clu,2] ) # cor=-0.29
+# Correlation is good between cell number and spots number at CS13
+
+#Vascular endothelium
+wt<-rctd_wt[[1]]
+plot_tp<-c('endothelium-2','endothelium-7','endothelium-5')
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[3]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[1+2]], ]
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/rctd/endothelium_s3.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('arterial.endothelium'=col6[2], 'vascular.endothelium'=col6[7], 'others'=col6[1] ),  labels=lab )
+#dev.off()
+```
+
+### Summary of identified cell types on ST
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+tp_rctd <-t( sapply( rownames(all_anno_sumt), function(x, cut=0.05){
+  if(! x %in% colnames(rctd_wt[[1]]) ) res<- c( 0, '', 0, '','not_in' ) else res<-c( sum( rctd_wt[[1]][,x]>=cut ), 'Yes', sum( rctd_wt[[2]][,x]>=cut ), 'Yes', 'No')
+  if( as.numeric(res[1])>0 | as.numeric(res[3])>0 ) res[5]<-'hit'
+  res<- c( all_anno_sumt[x,c(2,5)], res)
+  if( as.numeric(res[3])==0 ) res[4]<-'-'
+  if( as.numeric(res[5])==0 ) res[6]<-'-'
+  return(res)
+}) )
+colnames( tp_rctd )<- c('Cluster ID','Annotation','Number of spots in slice 1 at CS13 with % > 0.05', 'Reasonable position in slice 1 at CS13?', 'Number of spots in slice 2 at CS13 with % > 0.05', 'Reasonable position in slice 2 at CS13?', 'Hit?' )
+#write.table( tp_rctd, file='../result2022/rctd/tp_rctd_250.txt', sep='\t', quote=F) # Manual determine whether the position is reasonable
+tp_rctd<- read.xlsx( '../result2022/rctd/tp_rctd_250.xlsx',sheet=1, rowNames=F )
+# reset hit by considering spatial information
+tp_rctd_hit<- (tp_rctd[,3]>0&tp_rctd[,4]=='Yes') | (tp_rctd[,5]>0&tp_rctd[,6]=='Yes')
+tp_rctd[  tp_rctd[,7]=='hit'& (!tp_rctd_hit) ,7]<- 'No'
+rownames(tp_rctd)<-  rownames(all_anno_sumt)
+
+sys_rctd_hit<- t(sapply( names(col.block), function(x){
+  clu<- rownames(all_anno_sumt)[all_anno_sumt[,3] %in% x]
+  stat<- tp_rctd[clu,]
+  tt<- nrow(stat)
+  if( x %in% c('limb','epithelium','fibroblast','miscellaneous') ) res<- c( tt, 0, 0, 0, 0)
+  else{
+  s3<- sum( stat[,3]>0 & stat[,4]=='Yes')
+  s4<- sum( stat[,5]>0 & stat[,6]=='Yes')
+  uni<- sum(stat[,7]=='hit')
+  oth<- tt-uni
+  both<- s3+s4-uni
+  res<- c(0, oth, s3-both, s4-both, both)
+  not_in<- sum( stat[,7] %in% 'not_in')
+  }
+  return(res)
+}))
+```
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+plot_den<- rep(-1,5)
+plot_den[1]<-10
+#pdf('../result2022/rctd/sys_rctd_hit.pdf',width=10, height=5)
+par(cex=2,las=1,mar=c(3,4,1,1),lwd=3)
+bar<-barplot( t(sys_rctd_hit), ylab='Number of cell types', main='',border=NA, col=col6[c(1,5,10,3,2)], names.arg=rep('',19), density=plot_den, angle=45)
+text( bar+1, -3, label= rownames(sys_rctd_hit), cex=.5, srt=45, xpd=NA, pos=2 )
+legend('topright', legend=c('ST section 1 and 2','ST section 2 only','ST section 1 only','not captured','not in deconvolution'), fill=rev(col6[c(1,5,10,3,2)]), density=rev(plot_den) ,  border=NA, cex=.4)
+#dev.off()
+c(sum(sys_rctd_hit[,-(1:2)]),sum(sys_rctd_hit[,-1])) # [1] 223 240, 93%
+```
+
+### Confident call of RCTD
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+i<-3
+load(paste('~/human/spatial/rctd/rctd_ref313_multi_res_',sam_name[i],'.rdata',sep=''))
+length(rctd_res)
+sum(sapply( rctd_res, function(x){ Reduce('|',x$conf_list) })) / length(rctd_res) #  0.958, 2787 2909
+rctd_conf<-sapply( rctd_res, function(x){ Reduce('|',x$conf_list) })
+names(rctd_conf)<- rownames(rctd_wt[[1]])
+plot_ind<-! names(rctd_conf) %in% rm_spot[[3]]
+#pdf(paste('../result2022/rctd/conf_spot_',sam_name[i],'.pdf',sep=''))
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3,pch=16)
+plot( mx_pos2[[i]][names(rctd_conf)[plot_ind], 1], mx_pos2[[i]][names(rctd_conf)[plot_ind], 2],  main='', frame=F, xlab='',ylab='', cex=.3, col=ifelse(rctd_conf[plot_ind], 'black',col6[2] ), xaxt='n', yaxt='n' ) # Spots with confident call
+#dev.off()
+
+i<-4
+load(paste('~/human/spatial/rctd/rctd_ref313_multi_res_',sam_name[i],'.rdata',sep=''))
+length(rctd_res)
+sum(sapply( rctd_res, function(x){ Reduce('|',x$conf_list) })) / length(rctd_res) #  0.952, [1] 2994 3144
+(2787+2994)/(2909+3144) # [1] 0.9550636, total confident calls
+rctd_conf<-sapply( rctd_res, function(x){ Reduce('|',x$conf_list) })
+names(rctd_conf)<- rownames(rctd_wt[[2]])
+plot_ind<-! names(rctd_conf) %in% rm_spot[[4]]
+#pdf(paste('../result2022/rctd/conf_spot_',sam_name[i],'.pdf',sep=''))
+par(cex=2,las=1,mar=c(1,1,1,1),lwd=3,pch=16)
+plot( mx_pos2[[i]][names(rctd_conf)[plot_ind], 1], mx_pos2[[i]][names(rctd_conf)[plot_ind], 2],  main='', frame=F, xlab='',ylab='', cex=.3, col=ifelse(rctd_conf[plot_ind], 'black',col6[2] ), xaxt='n', yaxt='n' )
+#dev.off()
+```
+
+### signaling interaction by coexpression on ST
+```{r, eval=F, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# 1) L-R pair is expressed in two cell types in scRNA-seq; 2) co-expressed in spots with two cell types / all spots with two cell types, background: co-expressed in all spots / all spots
+
+tct<- lapply( rctd_wt, function(x, cut=.2){  # filter out cell type pairs (both proportion>=.2 in >=5 spots)
+  pair<-apply( cbind(rownames(x), x), 1, function(y){
+    spot<- y[1]
+    y<- as.numeric(y[-1])>cut
+    res<- matrix( '', nr=3,nc=1)
+    if( sum(y)>=2 ){
+      comb<- combn( colnames(x)[y], 2)
+      comb<- rbind( rep(spot,ncol(comb)), comb )
+      res<- cbind(res, comb)
+    }
+    return(res)
+  })
+  pair<- t(do.call(cbind, pair) )
+  pair<- pair[ pair[,1]!='', ]
+  return(pair)
+})
+sapply( tct, function(x){ sum( table(apply(x[,-1],1, paste,collapse='_'))>= 5 ) }) # 
+tct_ps<- lapply( tct, function(x, cut=5){
+  info<-table(apply(x[,-1],1, paste,collapse='_'))
+  res<- names(info)[info>=cut]
+  res<- t(sapply(res, function(y){ strsplit(y,split='_')[[1]] }))
+  return(res)
+})
+# remove pairs involved in blood/endothelium, a pair of neuron/prog in neural tube
+length(sig_rm1<- rownames(all_anno_sumt)[all_anno_sumt[,3] %in% c('blood','endothelium') ])
+sig_rm2<- rownames(all_anno_sumt)[c(18:30,34:44,64:89)] # if a pair are both
+sapply( tct_ps<-lapply( tct_ps, function(x){
+  x<- x[ !( x[,1]%in%sig_rm1 | x[,2]%in%sig_rm1), ]
+  x<- x[ !( x[,1]%in%sig_rm2 & x[,2]%in%sig_rm2), ]
+  return(x)
+}), dim)
+
+
+# test each pair of LR in each pair of cell types with > N overlapped spots
+load('../../2022/result/ficlu2022/c313_mn_fr.rdata')
+sum( ! rownames(c313_mn) %in% rownames(raw_mxs[[1]]) )# [1] 0, all in
+comg<- rownames(c313_mn)
+get_id<-function(x){ sapply(x, function(y){names(ge2an)[ge2an==y][1]})}
+
+# test with new LR database from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7261168/
+dim(sigp<- read.table( '../../signaling/Cabello-Aguilar2020/LRdb_enID_by_ge2an.txt', sep='\t',as.is=T, header=T)) # 3190  2
+dim(sigp<- sigp[ sigp[,1] %in% comg & sigp[,2] %in% comg, ]) # [1] 3184    2
+dim(sigp<- cbind( as.character(sigp[,1]), as.character(sigp[,2]) )) # to character
+# 'sigp': 1st column is ligand and 2nd column is receptor
+
+# a function to test by Fisher's exact test: NEED to distinguish which cell type express ligands and which express receptors
+test_tct_pair <- function( pair_can, tct_can, mx){
+tct_sigp<- apply( pair_can, 1, function(x, cut_exp=.5){
+  spot<- tct_can[ tct_can[,2]==x[1] & tct_can[,3]==x[2],1]
+  ct<- c(x[1], x[2])
+  is_exp<- apply( sigp, 1, function(y){ 
+    (c313_mn[y[1],ct[1]]>=cut_exp & c313_mn[y[2],ct[2]]>=cut_exp) | (c313_mn[y[2],ct[1]]>=cut_exp & c313_mn[y[1],ct[2]]>=cut_exp) 
+  })
+  exp<- sigp[is_exp,]
+  if( length(exp)==0 ) return( rep('', ) )
+  # which expressed ligands
+  which_lig<- apply( sigp[is_exp,], 1, function(y){ 
+    if(c313_mn[y[2],ct[1]]<cut_exp ) lig<-1  # if ct1 does not express receptor, according to the filter above, ct2 is the type that expresses receptor
+    else if(c313_mn[y[2],ct[2]]<cut_exp ) lig<-2
+    else if( c313_mn[y[1],ct[1]] > c313_mn[y[1],ct[2]] ) lig<-1  # if both types express receptor, the type with higher expression of ligands is the sender.
+    else lig<-2
+    return(lig)
+  })
+  dup<-0 # deal with only 1 line of result
+  if( length(exp)==2 ){
+    exp<- rbind(exp, exp)
+    dup<-1
+  }
+  res<- t(apply( exp, 1, function(y){
+    stat<- c( sum(apply(mx[y,spot]>=cut_exp,2,sum)==2), length(spot),sum(apply(mx[y,]>=cut_exp,2,sum)==2), ncol(mx) )
+    fisher<- fisher.test( matrix(stat, nr=2) )
+    stat<- c(stat, fisher$p.value, fisher$estimate )
+    return(stat)
+  }))
+  rownames(res)<- apply(exp, 1, function(y){ paste( ge2an[y], collapse='_') })
+  if(dup==1){
+    res<-t(data.matrix(res[1,]))
+    rownames(res)<- apply(exp, 1, function(y){ paste( ge2an[y], collapse='_') })[1]
+  }
+  res<- cbind( res, which_lig)
+  return(res)
+})
+tct_sigp <- do.call('rbind' ,mapply( function(x,y){
+  ct<- strsplit(x,split='_')[[1]]
+  res<-cbind( rep(ct[1], nrow(y)), rep(ct[2], nrow(y)), rownames(y), y)
+  return(res)
+},x=names(tct_sigp), y=tct_sigp) )
+tct_sigp<- cbind( tct_sigp , p.adjust( as.numeric(tct_sigp[,8]), 'BH'))
+rownames(tct_sigp)<-rep('', nrow(tct_sigp))
+tct_sigp<- tct_sigp[ order(as.numeric(tct_sigp[,8])), ]
+tct_sigp<- cbind( tct_sigp, all_anno_sumt[ tct_sigp[,1], 'anno2'], all_anno_sumt[ tct_sigp[,2], 'anno2'] )
+return(tct_sigp)
+}
+
+norm_mxs<- lapply( raw_mxs, function(x){
+  total<- colSums(x)
+  res<- t(t(x)/total*10000)
+  return(res)
+})
+s3_tct_sigp<- test_tct_pair( tct_ps[[1]], tct[[1]] , mx=norm_mxs[[3]] )
+s4_tct_sigp<- test_tct_pair( tct_ps[[2]], tct[[2]] , mx=norm_mxs[[4]] )
+
+# move the 'which ligands column' to the end
+s3_tct_sigp<- cbind( s3_tct_sigp[,-10], s3_tct_sigp[,10])
+s4_tct_sigp<- cbind( s4_tct_sigp[,-10], s4_tct_sigp[,10])
+
+# heatmap on top hit LR pairs (merge results from two slices)
+compile_tct_mx<- function(tct_ls, cut=0.05 ){
+  lr<- lapply( tct_ls, function(x){ x[ as.numeric(x[,10])< cut & as.numeric(x[,9])>1, 3] })
+  lr<- unique(unlist(lr))
+  ct<- lapply( tct_ls, function(x){ apply(x[ as.numeric(x[,10])< cut & as.numeric(x[,9])>1, 1:2],1,paste,collapse='_') })
+  ct<- unique(unlist(ct))
+  ct<- t(sapply(ct, function(x){ strsplit(x,split='_')[[1]] }))
+  mxs<- lapply( tct_ls, function(x){
+    qv<- matrix(1, nr=nrow(ct), nc=length(lr))
+    rownames(qv)<- apply(ct, 1, paste, collapse='_')
+    colnames(qv)<- lr
+    for(i in 1:nrow(qv)){
+      for(j in 1:ncol(qv)){
+        if( sum(x[,1]==ct[i,1] & x[,2]==ct[i,2] & x[,3]==lr[j])>0 ){
+        val<- x[ x[,1]==ct[i,1] & x[,2]==ct[i,2] & x[,3]==lr[j], 10]
+	qv[i,j]<- val
+	}
+      }
+    }
+    return(qv)
+  })
+  res<- matrix( apply( sapply( mxs, function(x){as.numeric(as.vector(x))}), 1, min), nr=nrow(mxs[[1]]) )
+  rownames(res)<- rownames(mxs[[1]])
+  colnames(res)<- colnames(mxs[[1]])
+  return(res)
+}
+dim( tct_sigp<- compile_tct_mx( tct_ls=list( s3_tct_sigp, s4_tct_sigp), cut=0.01 ) )
+# remove LRs involved in bad pairs
+bad_pr<- c('heart-6_endoderm-6','IM-2_endoderm-6','brain-25_neural progenitor-8','neural progenitor-7_neural progenitor-8','brain-25_neural progenitor-28','somite-2_endoderm-4','heart-1_endoderm-6','somatic LPM-10_somatic LPM-13')
+bad_gs<- colnames(tct_sigp)[sapply( colnames(tct_sigp), function(x){ sum(! rownames(tct_sigp)[tct_sigp[,x]<0.01] %in% bad_pr) })==0]
+tct_sigp<- tct_sigp[ ! rownames(tct_sigp) %in% bad_pr, !colnames(tct_sigp) %in% bad_gs ]
+```
+
+### Summary statistics and heatmap
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+dim(tct_sigp)
+sum(tct_sigp<0.01) # 134
+sum(tct_sigp<0.01)/nrow(tct_sigp) # [1] ~3 LR per cell type pairs
+
+source('../../heatmap3.r')
+source('../../heatmap3_invalid.r') 
+plot_mx<- -log10( tct_sigp )
+plot_mx[plot_mx>4]<- 4
+plot_lab1<- sapply( rownames(tct_sigp), function(x){ paste(all_anno_sumt[ strsplit(x, split='_')[[1]][1], c(3,5)],collapse='_') })
+plot_lab2<- sapply( rownames(tct_sigp), function(x){ paste(all_anno_sumt[ strsplit(x, split='_')[[1]][2], c(3,5)],collapse='_') })
+#pdf(paste('../result2022/signal/tct_sigp_heatmap_bprop02.pdf',sep=''), width=13,height=7) # this is bprop>0.2
+tmp<-heatmap3( plot_mx,labRow=paste(plot_lab1,plot_lab2,sep='.....'), labRow2=NA,scale='none',dendrogram='none',trace='none',Rowv=T,Colv=T,symkey=F,density.info="none",keysize=1,col=colorRampPalette(c("white","red"))(499),color_key_label='-log10 qv',color_key_label_cex=1,margins=c(0,0),color_key_axis_cex=1,key_mar=c(3, 0, 1, 1),labRow_pos=c(2,4),sepwidth=c(0.1,0.1),sepcolor='black',cexRow=.7 , cexCol=.4, labCol_pos=3 ,labCol_las=2 )
+#dev.off()
+
+tct_sigp_out<- cbind( t(sapply( rownames(tct_sigp), function(x){ res<-strsplit(x, split='_')[[1]]; return( c(all_anno_sumt[res[1],c(3,5)], all_anno_sumt[res[2],c(3,5)]) ) })), tct_sigp)
+colnames(tct_sigp_out)[1:4]<- c('system of type 1','annotation of type 1', 'system of type 2','annotation of type 2')
+#write.table( tct_sigp_out, file='../result2022/signal/tct_sigp_mx_bprop025.txt', quote=F, sep='\t')
+# Go with cutoff 0.2. Get 5 out of 7 signaling centers in neuroectoderm except two roof plates.
+```
+
+### Plot signaling interaction involved in floor plate
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+fp_tp<- rownames(all_anno_sumt)[ grep( 'floor plate', all_anno_sumt[,4])][3] # only floor plate in spinal cord
+fp_sigp<- tct_sigp[ sapply( rownames(tct_sigp), function(x){ sum( strsplit(x, split='_')[[1]] %in% fp_tp)>0 }), ]
+dim(fp_sigp<- fp_sigp[ , colSums(fp_sigp<0.01)>0 ])
+# from which slice
+fp_sigp2<- lapply( list(s3_tct_sigp, s4_tct_sigp), function(x){
+  res<- sapply( rownames(fp_sigp), function(y){
+    ct<-strsplit(y, split='_')[[1]]
+    sapply( colnames(fp_sigp), function(z){
+      if( sum( x[,1]==ct[1] & x[,2]==ct[2] & x[,3]==z)>0 ) return( x[x[,1]==ct[1] & x[,2]==ct[2] & x[,3]==z, 10] )
+      else return(1)
+    })
+  })
+  return(res)
+})
+# All from slice 4
+# which one is the sender
+  fp_sigp3<- sapply( rownames(fp_sigp), function(y){
+    x<- s4_tct_sigp
+    ct<-strsplit(y, split='_')[[1]]
+    sapply( colnames(fp_sigp), function(z){
+      if( sum( x[,1]==ct[1] & x[,2]==ct[2] & x[,3]==z)>0 ) return( x[x[,1]==ct[1] & x[,2]==ct[2] & x[,3]==z, 13] )
+      else return(0)
+    })
+  })
+# plot cell type and gene expression of FP interactin in S4
+plot_gene<- get_id(unique(unlist(lapply( colnames(fp_sigp), function(x){ strsplit(x,split='_')[[1]] }))))
+plot_tp<- unique(unlist(lapply( rownames(fp_sigp), function(x){ strsplit(x,split='_')[[1]] })))
+
+# change threshold on expression
+dim(plot_data<-norm_mxs[[i]][plot_gene,])
+plot_min<- .5
+plot_data[ plot_data< plot_min]<-0
+plot_genes_on_tsne(tsne=mx_pos2[[i]][ setdiff(rownames(rctd_wt[[i-2]]), rm_spot[[i]]),], mx=plot_data, genes=get_id(c('SHH','PTCH1','HHIP','NCAM1','GFRA1')), file_name='fp_sigp_lr_s4_b',path=paste('../result2022/signal/',sep=''),plot_cex=.5,is_order=F, data_max=c(10,5,5,5,3), is_pdf=F )
+```
+```{r, eval=T, tidy=TRUE, tidy.opts=list(width.cutoff=70), warning=FALSE}
+# put cell types on 1 figure
+wt<-rctd_wt[[2]]
+plot_tp<- plot_tp[c(1,2,3)]
+dp_tp<- all_anno_sumt[colnames(wt), 'anno1']
+dp_tp[! colnames(wt) %in% plot_tp ]<-'others'
+plot_wt<- t(apply( wt, 1, function(x){ tapply(x, dp_tp, sum) }))
+plot_mx<- data.frame( mx_pos2[[4]][rownames(plot_wt),], plot_wt )
+colnames(plot_mx)[1:2]<- c('X','Y')
+plot_mx<-plot_mx[ !rownames(plot_mx) %in% rm_spot[[2+2]], ]
+lab<-c( setdiff(sort(unique(dp_tp)),'others'),'others' )
+#pdf(paste('../result2022/signal/floor_plate_s4.pdf',sep=''),height=6)
+ggplot() + geom_scatterpie(aes(x=X, y=Y, r=50), data=plot_mx, cols=colnames(plot_mx)[-(1:2)], color=NA) + coord_equal()+ scale_fill_manual(values=c('floor.plate'=col6[2],  'pMN'=col6[3], 'sclerotome.late'=col6[16],'others'=col6[1] ),  labels=lab ) # 'floor.plate.rhombomere'=col6[4],
+#dev.off()
+```
